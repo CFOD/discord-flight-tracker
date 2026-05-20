@@ -33,7 +33,7 @@ export function latLonToXY(lat, lon, phi, theta, width, height) {
   if (z3 < 0) return null;
   const scale = height / 2;
   return {
-    x: width / 2 + x3 * scale * Math.cos(theta) - y3 * scale * Math.sin(theta),
-    y: height / 2 - (x3 * scale * Math.sin(theta) + y3 * scale * Math.cos(theta)),
+    x: width / 2 + x3 * scale,
+    y: height / 2 - (y3 * scale * Math.cos(theta) - z3 * scale * Math.sin(theta)),
   };
 }
