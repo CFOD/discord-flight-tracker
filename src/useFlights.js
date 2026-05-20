@@ -1,0 +1,49 @@
+import { useState, useEffect, useRef } from 'react';
+
+const WS_URL = 'wss://flightmap.cfod.co.uk/ws';
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 30000;
+
+export function useFlights() {
+  const [flights, setFlights] = useState([]);
+  const retryDelay = useRef(RECONNECT_BASE_MS);
+  const timeoutRef = useRef(null);
+  const wsRef = useRef(null);
+
+  useEffect(() => {
+    let destroyed = false;
+
+    function connect() {
+      if (destroyed) return;
+      const ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
+
+      ws.onmessage = (event) => {
+        try {
+          setFlights(JSON.parse(event.data));
+          retryDelay.current = RECONNECT_BASE_MS;
+        } catch (_) {}
+      };
+
+      ws.onclose = () => {
+        if (destroyed) return;
+        timeoutRef.current = setTimeout(() => {
+          retryDelay.current = Math.min(retryDelay.current * 2, RECONNECT_MAX_MS);
+          connect();
+        }, retryDelay.current);
+      };
+
+      ws.onerror = () => ws.close();
+    }
+
+    connect();
+
+    return () => {
+      destroyed = true;
+      clearTimeout(timeoutRef.current);
+      wsRef.current?.close();
+    };
+  }, []);
+
+  return flights;
+}
