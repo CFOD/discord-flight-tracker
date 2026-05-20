@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import createGlobe from 'cobe';
-import { useFlights } from './useFlights.js';
-import { GLOBE_CONFIG, flightsToMarkers, latLonToXY } from './globe.js';
-import { FlightCard } from './FlightCard.jsx';
+import { useEffect, useRef, useState } from "react";
+import createGlobe from "cobe";
+import { useFlights } from "./useFlights.js";
+import { GLOBE_CONFIG, flightsToMarkers, latLonToXY } from "./globe.js";
+import { FlightCard } from "./FlightCard.jsx";
 
 export default function App() {
   const canvasRef = useRef(null);
@@ -11,7 +11,15 @@ export default function App() {
   const flights = useFlights();
   const [selected, setSelected] = useState(null);
   const [cardPos, setCardPos] = useState({ x: 0, y: 0 });
-  const size = Math.min(window.innerWidth, window.innerHeight);
+  const [size, setSize] = useState(() => Math.min(window.innerWidth, window.innerHeight));
+
+  useEffect(() => {
+    function onResize() {
+      setSize(Math.min(window.innerWidth, window.innerHeight));
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // Keep flightsRef in sync so onRender closure always sees latest flights
   useEffect(() => {
@@ -66,7 +74,7 @@ export default function App() {
 
   return (
     <div
-      style={{ width: "100vw", height: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}
+      style={{ width: "100vw", height: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", position: "fixed", top: 0, left: 0, overflow: "hidden" }}
       onClick={handleClick}
     >
       <canvas

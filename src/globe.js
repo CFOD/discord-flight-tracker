@@ -6,15 +6,15 @@ export const GLOBE_CONFIG = {
   phi: 0,
   theta: 0.3,
   dark: 1,
-  diffuse: 1.2,
-  mapSamples: 16000,
-  mapBrightness: 12,
-  baseColor: [0.3, 0.3, 0.4],
+  diffuse: 3.0,
+  mapSamples: 20000,
+  mapBrightness: 8,
+  baseColor: [0.0, 0.05, 0.15],
   markerColor: [1, 0.8, 0],
-  glowColor: [0.1, 0.2, 0.5],
+  glowColor: [0.1, 0.3, 0.6],
   scale: 1,
   devicePixelRatio: 2,
-  opacity: 0.9,
+  opacity: 1.0,
 };
 
 export function flightsToMarkers(flights) {
