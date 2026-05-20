@@ -62,7 +62,7 @@ function EarthMesh({ flights, onFlightClick }) {
     <group ref={meshRef}>
       <mesh>
         <sphereGeometry args={[RADIUS, 64, 64]} />
-        <meshStandardMaterial map={colorMap} bumpMap={bumpMap} bumpScale={0.05} />
+        <meshStandardMaterial map={colorMap} bumpMap={bumpMap} bumpScale={0.02} roughness={0.8} metalness={0} />
       </mesh>
       <Atmosphere />
       {flights.map((flight) => (
@@ -85,7 +85,7 @@ function FlightMarker({ flight, earthRef, onClick }) {
   return (
     <mesh
       position={pos}
-      onClick={(e) => { e.stopPropagation(); onClick(flight, e); }}
+      onClick={(e) => { e.stopPropagation(); onClick(flight, e.nativeEvent ?? e); }}
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
     >
@@ -102,9 +102,9 @@ export function Globe({ flights, onFlightClick }) {
       style={{ width: '100%', height: '100%' }}
       gl={{ antialias: true, alpha: true }}
     >
-      <ambientLight intensity={0.6} />
-      <pointLight position={[10, 10, 10]} intensity={1.2} />
-      <pointLight position={[-10, -10, -10]} intensity={0.3} />
+      <ambientLight intensity={2.5} />
+      <pointLight position={[10, 10, 10]} intensity={2.0} />
+      <pointLight position={[-10, -10, -10]} intensity={1.0} />
       <EarthMesh flights={flights} onFlightClick={onFlightClick} />
       <OrbitControls
         enableZoom={true}
@@ -114,6 +114,7 @@ export function Globe({ flights, onFlightClick }) {
         autoRotate={false}
         dampingFactor={0.05}
         enableDamping={true}
+        makeDefault
       />
     </Canvas>
   );
