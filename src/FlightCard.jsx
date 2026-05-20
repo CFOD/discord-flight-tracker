@@ -1,8 +1,13 @@
 export function FlightCard({ flight, x, y, onClose }) {
+  const cardW = 220;
+  const cardH = 110;
+  const left = Math.min(Math.max(x + 12, 8), window.innerWidth - cardW - 8);
+  const top = Math.min(Math.max(y - cardH / 2, 8), window.innerHeight - cardH - 8);
+
   const style = {
-    position: 'absolute',
-    left: Math.min(x + 12, window.innerWidth - 220),
-    top: Math.max(y - 80, 8),
+    position: 'fixed',
+    left,
+    top,
     background: 'rgba(10, 15, 30, 0.92)',
     border: '1px solid rgba(255, 200, 0, 0.4)',
     borderRadius: 8,
@@ -10,7 +15,7 @@ export function FlightCard({ flight, x, y, onClose }) {
     color: '#fff',
     fontFamily: 'monospace',
     fontSize: 13,
-    minWidth: 200,
+    width: cardW,
     pointerEvents: 'auto',
     zIndex: 100,
   };
