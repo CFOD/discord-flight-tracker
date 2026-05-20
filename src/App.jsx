@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState } from "react";
-import createGlobe from "cobe";
-import { useFlights } from "./useFlights.js";
-import { GLOBE_CONFIG, flightsToMarkers, latLonToXY } from "./globe.js";
-import { FlightCard } from "./FlightCard.jsx";
+import { useEffect, useRef, useState } from 'react';
+import createGlobe from 'cobe';
+import { useFlights } from './useFlights.js';
+import { GLOBE_CONFIG, flightsToMarkers, latLonToXY } from './globe.js';
+import { FlightCard } from './FlightCard.jsx';
 
 export default function App() {
   const canvasRef = useRef(null);
   const phiRef = useRef(0);
   const flightsRef = useRef([]);
+  const globeRef = useRef(null);
+  const rafRef = useRef(null);
   const flights = useFlights();
   const [selected, setSelected] = useState(null);
   const [cardPos, setCardPos] = useState({ x: 0, y: 0 });
@@ -17,31 +19,41 @@ export default function App() {
     function onResize() {
       setSize(Math.min(window.innerWidth, window.innerHeight));
     }
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // Keep flightsRef in sync so onRender closure always sees latest flights
   useEffect(() => {
     flightsRef.current = flights;
   }, [flights]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
-    let phi = 0;
+
     const globe = createGlobe(canvasRef.current, {
       ...GLOBE_CONFIG,
       width: size * 2,
       height: size * 2,
-      onRender(state) {
-        state.phi = phi;
-        phi += 0.003;
-        phiRef.current = phi;
-        state.markers = flightsToMarkers(flightsRef.current);
-      },
+      markers: [],
     });
-    return () => globe.destroy();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    globeRef.current = globe;
+
+    function animate() {
+      phiRef.current += 0.003;
+      globe.update({
+        phi: phiRef.current,
+        markers: flightsToMarkers(flightsRef.current),
+      });
+      rafRef.current = requestAnimationFrame(animate);
+    }
+    rafRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      globe.destroy();
+      globeRef.current = null;
+    };
+  }, [size]);
 
   function handleClick(e) {
     const currentFlights = flightsRef.current;
@@ -74,12 +86,12 @@ export default function App() {
 
   return (
     <div
-      style={{ width: "100vw", height: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", position: "fixed", top: 0, left: 0, overflow: "hidden" }}
+      style={{ width: '100vw', height: '100vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', top: 0, left: 0, overflow: 'hidden' }}
       onClick={handleClick}
     >
       <canvas
         ref={canvasRef}
-        style={{ width: size, height: size, cursor: "pointer" }}
+        style={{ width: size, height: size, cursor: 'pointer' }}
         width={size * 2}
         height={size * 2}
       />
@@ -92,7 +104,7 @@ export default function App() {
         />
       )}
       {flights.length === 0 && (
-        <div style={{ position: "absolute", bottom: 24, color: "#666", fontSize: 13 }}>
+        <div style={{ position: 'absolute', bottom: 24, color: '#666', fontSize: 13 }}>
           No active flights
         </div>
       )}
