@@ -237,31 +237,24 @@ function buildAtcSectorLines(boundaries, activeFirIds) {
   return new Float32Array(points);
 }
 
-function AtcAirportDot({ controller: c }) {
+function AtcFirLabel({ id, lat, lng }) {
   const camDist = useContext(CamDistContext);
   const scale = camDist / 5;
-  const texture = useMemo(() => makeLabelTexture(c.callsign), [c.callsign]);
-  const dotPos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.012), [c.lat, c.lon]);
-  const labelPos = useMemo(() => latLngToVec3(c.lat, c.lon, LABEL_RADIUS), [c.lat, c.lon]);
+  const texture = useMemo(() => makeLabelTexture(id), [id]);
+  const pos = useMemo(() => latLngToVec3(lat, lng, LABEL_RADIUS), [lat, lng]);
   const quaternion = useMemo(() => {
-    const normal = labelPos.clone().normalize();
+    const normal = pos.clone().normalize();
     const up = new THREE.Vector3(0, 1, 0);
     const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
     const matrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0, 0, 0), safeUp);
     return new THREE.Quaternion().setFromRotationMatrix(matrix);
-  }, [labelPos]);
+  }, [pos]);
 
   return (
-    <group>
-      <mesh position={dotPos}>
-        <sphereGeometry args={[0.008 * scale, 6, 6]} />
-        <meshBasicMaterial color="#00eeff" />
-      </mesh>
-      <mesh position={labelPos} quaternion={quaternion} scale={[scale, scale, 1]}>
-        <planeGeometry args={[0.28, 0.07]} />
-        <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
-      </mesh>
-    </group>
+    <mesh position={pos} quaternion={quaternion} scale={[scale, scale, 1]}>
+      <planeGeometry args={[0.28, 0.07]} />
+      <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
+    </mesh>
   );
 }
 
@@ -274,10 +267,19 @@ function AtcOverlay({ controllers, boundaries }) {
     return ids;
   }, [controllers]);
 
-  const airportControllers = useMemo(
-    () => controllers.filter((c) => AIRPORT_FACILITIES.has(c.facility) && c.lat && c.lon),
-    [controllers]
-  );
+  // Get centroid for each active FIR from boundaries GeoJSON
+  const firLabels = useMemo(() => {
+    if (!boundaries) return [];
+    return boundaries.features
+      .filter((f) => firIds.has(f.properties.id))
+      .map((f) => {
+        const lat = parseFloat(f.properties.label_lat);
+        const lng = parseFloat(f.properties.label_lon);
+        if (isNaN(lat) || isNaN(lng)) return null;
+        return { id: f.properties.id, lat, lng };
+      })
+      .filter(Boolean);
+  }, [boundaries, firIds]);
 
   const sectorGeometry = useMemo(() => {
     if (!boundaries || firIds.size === 0) return null;
@@ -295,8 +297,8 @@ function AtcOverlay({ controllers, boundaries }) {
           <lineBasicMaterial color="#00eeff" transparent opacity={0.85} depthWrite={false} />
         </lineSegments>
       )}
-      {airportControllers.map((c) => (
-        <AtcAirportDot key={c.callsign} controller={c} />
+      {firLabels.map(({ id, lat, lng }) => (
+        <AtcFirLabel key={id} id={id} lat={lat} lng={lng} />
       ))}
     </>
   );
