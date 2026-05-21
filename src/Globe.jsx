@@ -10,7 +10,7 @@ const RADIUS = 2;
 const BORDER_RADIUS = RADIUS + 0.003;
 const LABEL_RADIUS = RADIUS + 0.012;
 const ATC_RADIUS = RADIUS + 0.006;
-const MAX_CRUISE_LIFT = 0.18;
+const MAX_CRUISE_LIFT = 0.04;
 
 const BOUNDARIES_URL = '/boundaries.geojson';
 
@@ -229,6 +229,32 @@ function buildAtcSectorLines(boundaries, activeFirIds) {
   return new Float32Array(points);
 }
 
+function AtcAirportDot({ controller: c }) {
+  const pos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.025), [c.lat, c.lon]);
+  const labelPos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.06), [c.lat, c.lon]);
+  const texture = useMemo(() => makeLabelTexture(c.callsign), [c.callsign]);
+  const quaternion = useMemo(() => {
+    const normal = labelPos.clone().normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
+    const matrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0, 0, 0), safeUp);
+    return new THREE.Quaternion().setFromRotationMatrix(matrix);
+  }, [labelPos]);
+
+  return (
+    <group>
+      <mesh position={pos}>
+        <sphereGeometry args={[0.014, 6, 6]} />
+        <meshBasicMaterial color="#00eeff" />
+      </mesh>
+      <mesh position={labelPos} quaternion={quaternion}>
+        <planeGeometry args={[0.22, 0.055]} />
+        <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
 function AtcOverlay({ controllers, boundaries }) {
   const firIds = useMemo(() => {
     const ids = new Set();
@@ -260,28 +286,9 @@ function AtcOverlay({ controllers, boundaries }) {
           <lineBasicMaterial color="#00eeff" transparent opacity={0.75} depthWrite={false} />
         </lineSegments>
       )}
-      {airportControllers.filter((c) => c.lat && c.lon).map((c) => {
-        const pos = latLngToVec3(c.lat, c.lon, RADIUS + 0.025);
-        const labelPos = latLngToVec3(c.lat, c.lon, RADIUS + 0.055);
-        const normal = labelPos.clone().normalize();
-        const up = new THREE.Vector3(0, 1, 0);
-        const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
-        const matrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0, 0, 0), safeUp);
-        const quaternion = new THREE.Quaternion().setFromRotationMatrix(matrix);
-        const texture = makeLabelTexture(c.callsign);
-        return (
-          <group key={c.callsign}>
-            <mesh position={pos}>
-              <sphereGeometry args={[0.014, 6, 6]} />
-              <meshBasicMaterial color="#00eeff" />
-            </mesh>
-            <mesh position={labelPos} quaternion={quaternion}>
-              <planeGeometry args={[0.22, 0.055]} />
-              <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
-            </mesh>
-          </group>
-        );
-      })}
+      {airportControllers.filter((c) => c.lat && c.lon).map((c) => (
+        <AtcAirportDot key={c.callsign} controller={c} />
+      ))}
     </>
   );
 }
