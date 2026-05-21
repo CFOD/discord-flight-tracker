@@ -1,6 +1,8 @@
-import { useRef, useState, Suspense, useEffect, useMemo } from 'react';
+import { useRef, useState, Suspense, useEffect, useMemo, createContext, useContext } from 'react';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+
+const CamDistContext = createContext(5);
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
 
@@ -63,13 +65,15 @@ function buildRoutePoints(waypoints) {
 function FlightRoute({ flight }) {
   const { waypoints, color } = flight;
   const routeColor = color ?? '#f0cb00';
+  const camDist = useContext(CamDistContext);
+  const tubeRadius = 0.0015 * (camDist / 5);
 
   const { tubeGeom, flownLineGeom } = useMemo(() => {
     const curve = buildRoutePoints(waypoints);
     if (!curve) return {};
 
     const totalPoints = Math.max(waypoints.length * 4, 120);
-    const tubeGeom = new THREE.TubeGeometry(curve, totalPoints, 0.004, 6, false);
+    const tubeGeom = new THREE.TubeGeometry(curve, totalPoints, tubeRadius, 5, false);
 
     // Find closest point on the curve to current plane position
     const allPositions = curve.getPoints(totalPoints);
@@ -166,6 +170,8 @@ function makeLabelTexture(name) {
 }
 
 function CountryLabel({ name, lat, lng }) {
+  const camDist = useContext(CamDistContext);
+  const scale = camDist / 5;
   const texture = useMemo(() => makeLabelTexture(name), [name]);
   const pos = useMemo(() => latLngToVec3(lat, lng, LABEL_RADIUS), [lat, lng]);
 
@@ -178,7 +184,7 @@ function CountryLabel({ name, lat, lng }) {
   }, [pos]);
 
   return (
-    <mesh position={pos} quaternion={quaternion}>
+    <mesh position={pos} quaternion={quaternion} scale={[scale, scale, 1]}>
       <planeGeometry args={[0.28, 0.07]} />
       <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
     </mesh>
@@ -186,13 +192,15 @@ function CountryLabel({ name, lat, lng }) {
 }
 
 function CountryBorders({ geojson }) {
-  const positions = useMemo(() => geojsonToLineSegments(geojson.features, BORDER_RADIUS), [geojson]);
+  const geometry = useMemo(() => {
+    const positions = geojsonToLineSegments(geojson.features, BORDER_RADIUS);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    return geo;
+  }, [geojson]);
 
   return (
-    <lineSegments>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-      </bufferGeometry>
+    <lineSegments geometry={geometry}>
       <lineBasicMaterial color="#ffffff" transparent opacity={0.25} depthWrite={false} />
     </lineSegments>
   );
@@ -230,8 +238,11 @@ function buildAtcSectorLines(boundaries, activeFirIds) {
 }
 
 function AtcAirportDot({ controller: c }) {
-  const pos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.025), [c.lat, c.lon]);
-  const labelPos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.06), [c.lat, c.lon]);
+  const camDist = useContext(CamDistContext);
+  const scale = camDist / 5;
+  const dotRadius = 0.008 * scale;
+  const pos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.012), [c.lat, c.lon]);
+  const labelPos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.05), [c.lat, c.lon]);
   const texture = useMemo(() => makeLabelTexture(c.callsign), [c.callsign]);
   const quaternion = useMemo(() => {
     const normal = labelPos.clone().normalize();
@@ -244,10 +255,10 @@ function AtcAirportDot({ controller: c }) {
   return (
     <group>
       <mesh position={pos}>
-        <sphereGeometry args={[0.014, 6, 6]} />
+        <sphereGeometry args={[dotRadius, 6, 6]} />
         <meshBasicMaterial color="#00eeff" />
       </mesh>
-      <mesh position={labelPos} quaternion={quaternion}>
+      <mesh position={labelPos} quaternion={quaternion} scale={[scale, scale, 1]}>
         <planeGeometry args={[0.22, 0.055]} />
         <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
@@ -271,18 +282,19 @@ function AtcOverlay({ controllers, boundaries }) {
     [controllers]
   );
 
-  const sectorPositions = useMemo(() => {
+  const sectorGeometry = useMemo(() => {
     if (!boundaries || firIds.size === 0) return null;
-    return buildAtcSectorLines(boundaries, firIds);
+    const positions = buildAtcSectorLines(boundaries, firIds);
+    if (positions.length === 0) return null;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    return geo;
   }, [boundaries, firIds]);
 
   return (
     <>
-      {sectorPositions && sectorPositions.length > 0 && (
-        <lineSegments>
-          <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[sectorPositions, 3]} />
-          </bufferGeometry>
+      {sectorGeometry && (
+        <lineSegments geometry={sectorGeometry}>
           <lineBasicMaterial color="#00eeff" transparent opacity={0.75} depthWrite={false} />
         </lineSegments>
       )}
@@ -359,7 +371,10 @@ function EarthMesh({ flights, onFlightClick, geojson, controllers, boundaries })
 
 function FlightMarker({ flight, onClick }) {
   const [hovered, setHovered] = useState(false);
-  const pos = latLngToVec3(flight.lat, flight.lon, RADIUS + 0.04);
+  const camDist = useContext(CamDistContext);
+  const scale = camDist / 5; // 1.0 at default distance, shrinks when zoomed in
+  const baseRadius = 0.012 * scale;
+  const pos = latLngToVec3(flight.lat, flight.lon, RADIUS + 0.005 + baseRadius);
   const color = flight.color ?? '#f0cb00';
 
   return (
@@ -369,15 +384,29 @@ function FlightMarker({ flight, onClick }) {
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
     >
-      <sphereGeometry args={[hovered ? 0.04 : 0.03, 8, 8]} />
+      <sphereGeometry args={[hovered ? baseRadius * 1.4 : baseRadius, 8, 8]} />
       <meshBasicMaterial color={color} />
     </mesh>
   );
 }
 
+function CameraTracker({ onUpdate }) {
+  const lastRef = useRef(5);
+  useFrame(({ camera }) => {
+    const d = camera.position.length();
+    // Only trigger update when distance changes meaningfully (avoids thrash)
+    if (Math.abs(d - lastRef.current) > 0.05) {
+      lastRef.current = d;
+      onUpdate(d);
+    }
+  });
+  return null;
+}
+
 export function Globe({ flights, controllers, onFlightClick }) {
   const [geojson, setGeojson] = useState(null);
   const [boundaries, setBoundaries] = useState(null);
+  const [camDist, setCamDist] = useState(5);
 
   useEffect(() => {
     fetch('/countries.geojson')
@@ -402,23 +431,26 @@ export function Globe({ flights, controllers, onFlightClick }) {
       style={{ width: '100%', height: '100%' }}
       gl={{ antialias: true, alpha: true }}
     >
-      <ambientLight intensity={4.0} />
-      <pointLight position={[10, 10, 10]} intensity={3.0} />
-      <pointLight position={[-10, -10, -10]} intensity={1.5} />
-      <pointLight position={[0, 10, -10]} intensity={1.5} />
-      <Suspense fallback={null}>
-        <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} controllers={controllers} boundaries={boundaries} />
-      </Suspense>
-      <OrbitControls
-        enableZoom={true}
-        enablePan={false}
-        minDistance={2.5}
-        maxDistance={8}
-        autoRotate={false}
-        dampingFactor={0.05}
-        enableDamping={true}
-        makeDefault
-      />
+      <CamDistContext.Provider value={camDist}>
+        <ambientLight intensity={4.0} />
+        <pointLight position={[10, 10, 10]} intensity={3.0} />
+        <pointLight position={[-10, -10, -10]} intensity={1.5} />
+        <pointLight position={[0, 10, -10]} intensity={1.5} />
+        <Suspense fallback={null}>
+          <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} controllers={controllers} boundaries={boundaries} />
+        </Suspense>
+        <CameraTracker onUpdate={setCamDist} />
+        <OrbitControls
+          enableZoom={true}
+          enablePan={false}
+          minDistance={2.5}
+          maxDistance={8}
+          autoRotate={false}
+          dampingFactor={0.05}
+          enableDamping={true}
+          makeDefault
+        />
+      </CamDistContext.Provider>
     </Canvas>
   );
 }
