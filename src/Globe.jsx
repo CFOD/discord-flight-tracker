@@ -12,7 +12,7 @@ const LABEL_RADIUS = RADIUS + 0.012;
 const ATC_RADIUS = RADIUS + 0.006;
 const MAX_CRUISE_LIFT = 0.18;
 
-const BOUNDARIES_URL = '/boundaries';
+const BOUNDARIES_URL = '/boundaries.geojson';
 
 // Facility codes: 1=FSS, 6=CTR draw FIR polygon; 2=DEL,3=GND,4=TWR,5=APP draw airport dot
 const FIR_FACILITIES = new Set([1, 6]);
