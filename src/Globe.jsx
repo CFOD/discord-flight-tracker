@@ -27,7 +27,7 @@ function Atmosphere() {
         transparent
         uniforms={{
           glowColor: { value: new THREE.Color(0x3399ff) },
-          intensity: { value: 1.2 },
+          intensity: { value: 1.8 },
         }}
         vertexShader={`
           varying vec3 vNormal;
@@ -62,7 +62,7 @@ function EarthMesh({ flights, onFlightClick }) {
     <group ref={meshRef}>
       <mesh>
         <sphereGeometry args={[RADIUS, 64, 64]} />
-        <meshStandardMaterial map={colorMap} bumpMap={bumpMap} bumpScale={0.02} roughness={0.8} metalness={0} />
+        <meshStandardMaterial map={colorMap} bumpMap={bumpMap} bumpScale={0.02} roughness={0.3} metalness={0.05} />
       </mesh>
       <Atmosphere />
       {flights.map((flight) => (
@@ -106,9 +106,10 @@ export function Globe({ flights, onFlightClick }) {
       style={{ width: '100%', height: '100%' }}
       gl={{ antialias: true, alpha: true }}
     >
-      <ambientLight intensity={2.5} />
-      <pointLight position={[10, 10, 10]} intensity={2.0} />
-      <pointLight position={[-10, -10, -10]} intensity={1.0} />
+      <ambientLight intensity={4.0} />
+      <pointLight position={[10, 10, 10]} intensity={3.0} />
+      <pointLight position={[-10, -10, -10]} intensity={1.5} />
+      <pointLight position={[0, 10, -10]} intensity={1.5} />
       <Suspense fallback={<GlobeLoader />}>
         <EarthMesh flights={flights} onFlightClick={onFlightClick} />
       </Suspense>
