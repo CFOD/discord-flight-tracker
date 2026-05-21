@@ -9,7 +9,14 @@ const BUMP_TEXTURE = '/textures/earth-topology.png';
 const RADIUS = 2;
 const BORDER_RADIUS = RADIUS + 0.003;
 const LABEL_RADIUS = RADIUS + 0.012;
-const MAX_CRUISE_LIFT = 0.18; // max lift above surface at cruise altitude
+const ATC_RADIUS = RADIUS + 0.006;
+const MAX_CRUISE_LIFT = 0.18;
+
+const BOUNDARIES_URL = '/boundaries';
+
+// Facility codes: 1=FSS, 6=CTR draw FIR polygon; 2=DEL,3=GND,4=TWR,5=APP draw airport dot
+const FIR_FACILITIES = new Set([1, 6]);
+const AIRPORT_FACILITIES = new Set([2, 3, 4, 5]);
 
 function latLngToVec3(lat, lng, radius) {
   const phi = (90 - lat) * (Math.PI / 180);
@@ -201,6 +208,69 @@ function CountryLabels({ geojson }) {
   );
 }
 
+function buildAtcSectorLines(boundaries, activeFirIds) {
+  const points = [];
+  for (const feature of boundaries.features) {
+    if (!activeFirIds.has(feature.properties.id)) continue;
+    const { type, coordinates } = feature.geometry;
+    const rings = type === 'Polygon' ? coordinates : type === 'MultiPolygon' ? coordinates.flat() : [];
+    for (const ring of rings) {
+      for (let i = 0; i < ring.length - 1; i++) {
+        const [lng1, lat1] = ring[i];
+        const [lng2, lat2] = ring[i + 1];
+        const v1 = latLngToVec3(lat1, lng1, ATC_RADIUS);
+        const v2 = latLngToVec3(lat2, lng2, ATC_RADIUS);
+        points.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
+      }
+    }
+  }
+  return new Float32Array(points);
+}
+
+function AtcOverlay({ controllers, boundaries }) {
+  const firIds = useMemo(() => {
+    const ids = new Set();
+    for (const c of controllers) {
+      if (FIR_FACILITIES.has(c.facility)) {
+        ids.add(c.callsign.split('_')[0]);
+      }
+    }
+    return ids;
+  }, [controllers]);
+
+  const airportControllers = useMemo(
+    () => controllers.filter((c) => AIRPORT_FACILITIES.has(c.facility)),
+    [controllers]
+  );
+
+  const sectorPositions = useMemo(() => {
+    if (!boundaries || firIds.size === 0) return null;
+    return buildAtcSectorLines(boundaries, firIds);
+  }, [boundaries, firIds]);
+
+  return (
+    <>
+      {sectorPositions && sectorPositions.length > 0 && (
+        <lineSegments>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[sectorPositions, 3]} />
+          </bufferGeometry>
+          <lineBasicMaterial color="#00cfff" transparent opacity={0.5} depthWrite={false} />
+        </lineSegments>
+      )}
+      {airportControllers.map((c) => {
+        const pos = latLngToVec3(c.lat, c.lon, RADIUS + 0.025);
+        return (
+          <mesh key={c.callsign} position={pos}>
+            <sphereGeometry args={[0.012, 6, 6]} />
+            <meshBasicMaterial color="#00cfff" transparent opacity={0.8} />
+          </mesh>
+        );
+      })}
+    </>
+  );
+}
+
 function Atmosphere() {
   return (
     <mesh>
@@ -237,7 +307,7 @@ function Atmosphere() {
   );
 }
 
-function EarthMesh({ flights, onFlightClick, geojson }) {
+function EarthMesh({ flights, onFlightClick, geojson, controllers, boundaries }) {
   const meshRef = useRef();
   const [colorMap, bumpMap] = useLoader(TextureLoader, [EARTH_TEXTURE, BUMP_TEXTURE]);
 
@@ -254,6 +324,7 @@ function EarthMesh({ flights, onFlightClick, geojson }) {
       <Atmosphere />
       {geojson && <CountryBorders geojson={geojson} />}
       {geojson && <CountryLabels geojson={geojson} />}
+      {controllers.length > 0 && <AtcOverlay controllers={controllers} boundaries={boundaries} />}
       {flights.map((flight) => (
         <group key={flight.discordId}>
           {flight.waypoints?.length >= 2 && <FlightRoute flight={flight} />}
@@ -282,13 +353,21 @@ function FlightMarker({ flight, onClick }) {
   );
 }
 
-export function Globe({ flights, onFlightClick }) {
+export function Globe({ flights, controllers, onFlightClick }) {
   const [geojson, setGeojson] = useState(null);
+  const [boundaries, setBoundaries] = useState(null);
 
   useEffect(() => {
     fetch('/countries.geojson')
       .then((r) => r.json())
       .then(setGeojson)
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    fetch(BOUNDARIES_URL)
+      .then((r) => r.json())
+      .then(setBoundaries)
       .catch(console.error);
   }, []);
 
@@ -303,7 +382,7 @@ export function Globe({ flights, onFlightClick }) {
       <pointLight position={[-10, -10, -10]} intensity={1.5} />
       <pointLight position={[0, 10, -10]} intensity={1.5} />
       <Suspense fallback={null}>
-        <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} />
+        <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} controllers={controllers} boundaries={boundaries} />
       </Suspense>
       <OrbitControls
         enableZoom={true}

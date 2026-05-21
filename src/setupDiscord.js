@@ -6,8 +6,9 @@ export const discordSdk = new DiscordSDK(CLIENT_ID);
 
 export async function setupDiscord() {
   patchUrlMappings([
-    { prefix: '/api', target: 'flightmap.cfod.co.uk' },
-    { prefix: '/ws', target: 'flightmap.cfod.co.uk' },
+    { prefix: '/api',         target: 'flightmap.cfod.co.uk' },
+    { prefix: '/ws',          target: 'flightmap.cfod.co.uk' },
+    { prefix: '/boundaries',  target: 'flightmap.cfod.co.uk' },
   ]);
 
   await discordSdk.ready();

@@ -12,7 +12,7 @@ function LoadingScreen() {
 }
 
 function FlightGlobe() {
-  const flights = useFlights();
+  const { flights, controllers } = useFlights();
   const [selected, setSelected] = useState(null);
   const [cardPos, setCardPos] = useState({ x: 0, y: 0 });
 
@@ -26,7 +26,7 @@ function FlightGlobe() {
       style={{ width: '100vw', height: '100vh', background: '#000', position: 'fixed', top: 0, left: 0 }}
       onClick={() => setSelected(null)}
     >
-      <Globe flights={flights} onFlightClick={handleFlightClick} />
+      <Globe flights={flights} controllers={controllers} onFlightClick={handleFlightClick} />
       {selected && (
         <FlightCard
           flight={selected}
