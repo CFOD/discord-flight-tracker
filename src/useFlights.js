@@ -26,7 +26,10 @@ export function useFlights() {
             setFlights(msg.flights);
             retryDelay.current = RECONNECT_BASE_MS;
           } else if (msg.type === 'atc') {
+            console.log('[ATC] received', msg.controllers?.length, 'controllers', msg.controllers?.[0]);
             setControllers(msg.controllers);
+          } else {
+            console.log('[WS] unknown message type:', msg.type, msg);
           }
         } catch (_) {}
       };
