@@ -26,8 +26,9 @@ function Atmosphere() {
         side={THREE.BackSide}
         transparent
         uniforms={{
-          glowColor: { value: new THREE.Color(0x3399ff) },
-          intensity: { value: 1.8 },
+          innerColor: { value: new THREE.Color(0x88bbff) },
+          outerColor: { value: new THREE.Color(0xaaddff) },
+          intensity: { value: 1.2 },
         }}
         vertexShader={`
           varying vec3 vNormal;
@@ -38,11 +39,14 @@ function Atmosphere() {
         `}
         fragmentShader={`
           varying vec3 vNormal;
-          uniform vec3 glowColor;
+          uniform vec3 innerColor;
+          uniform vec3 outerColor;
           uniform float intensity;
           void main() {
             float rim = 1.0 - dot(vNormal, vec3(0.0, 0.0, 1.0));
-            gl_FragColor = vec4(glowColor, pow(rim, 3.0) * intensity * 0.6);
+            float alpha = pow(rim, 4.5) * intensity * 0.55;
+            vec3 color = mix(innerColor, outerColor, pow(rim, 2.0));
+            gl_FragColor = vec4(color, alpha);
           }
         `}
       />
