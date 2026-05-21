@@ -1,9 +1,17 @@
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useFlights } from './useFlights.js';
 import { Globe } from './Globe.jsx';
 import { FlightCard } from './FlightCard.jsx';
 
-export default function App() {
+function LoadingScreen() {
+  return (
+    <div style={{ width: '100vw', height: '100vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', top: 0, left: 0 }}>
+      <div style={{ color: '#3399ff', fontFamily: 'monospace', fontSize: 14, opacity: 0.7 }}>Loading...</div>
+    </div>
+  );
+}
+
+function FlightGlobe() {
   const flights = useFlights();
   const [selected, setSelected] = useState(null);
   const [cardPos, setCardPos] = useState({ x: 0, y: 0 });
@@ -14,7 +22,8 @@ export default function App() {
   }
 
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#000', position: 'fixed', top: 0, left: 0 }}
+    <div
+      style={{ width: '100vw', height: '100vh', background: '#000', position: 'fixed', top: 0, left: 0 }}
       onClick={() => setSelected(null)}
     >
       <Globe flights={flights} onFlightClick={handleFlightClick} />
@@ -32,5 +41,13 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <FlightGlobe />
+    </Suspense>
   );
 }

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, Suspense } from 'react';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -95,6 +95,10 @@ function FlightMarker({ flight, earthRef, onClick }) {
   );
 }
 
+function GlobeLoader() {
+  return null;
+}
+
 export function Globe({ flights, onFlightClick }) {
   return (
     <Canvas
@@ -105,7 +109,9 @@ export function Globe({ flights, onFlightClick }) {
       <ambientLight intensity={2.5} />
       <pointLight position={[10, 10, 10]} intensity={2.0} />
       <pointLight position={[-10, -10, -10]} intensity={1.0} />
-      <EarthMesh flights={flights} onFlightClick={onFlightClick} />
+      <Suspense fallback={<GlobeLoader />}>
+        <EarthMesh flights={flights} onFlightClick={onFlightClick} />
+      </Suspense>
       <OrbitControls
         enableZoom={true}
         enablePan={false}
