@@ -1,6 +1,6 @@
 import { useRef, useState, Suspense, useEffect, useMemo } from 'react';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
-import { OrbitControls, Text } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
 
@@ -8,7 +8,7 @@ const EARTH_TEXTURE = '/textures/earth-blue-marble.jpg';
 const BUMP_TEXTURE = '/textures/earth-topology.png';
 const RADIUS = 2;
 const BORDER_RADIUS = RADIUS + 0.003;
-const LABEL_RADIUS = RADIUS + 0.01;
+const LABEL_RADIUS = RADIUS + 0.012;
 
 function latLngToVec3(lat, lng, radius) {
   const phi = (90 - lat) * (Math.PI / 180);
@@ -50,10 +50,49 @@ function countryCentroids(features) {
     const ring = type === 'Polygon' ? coordinates[0] : coordinates[0][0];
     let sumLng = 0, sumLat = 0;
     for (const [lng, lat] of ring) { sumLng += lng; sumLat += lat; }
-    const avgLng = sumLng / ring.length;
-    const avgLat = sumLat / ring.length;
-    return { name: f.properties.name, lat: avgLat, lng: avgLng };
+    return { name: f.properties.name, lat: sumLat / ring.length, lng: sumLng / ring.length };
   });
+}
+
+function makeLabelTexture(name) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 256, 64);
+  ctx.font = 'bold 22px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+  ctx.lineWidth = 4;
+  ctx.strokeText(name, 128, 32);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillText(name, 128, 32);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function CountryLabel({ name, lat, lng }) {
+  const texture = useMemo(() => makeLabelTexture(name), [name]);
+  const pos = useMemo(() => latLngToVec3(lat, lng, LABEL_RADIUS), [lat, lng]);
+
+  // Orient the plane to face outward from the sphere surface
+  const quaternion = useMemo(() => {
+    const normal = pos.clone().normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    // If normal is nearly parallel to up, use a different up vector
+    const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
+    const matrix = new THREE.Matrix4().lookAt(new THREE.Vector3(0, 0, 0), normal, safeUp);
+    return new THREE.Quaternion().setFromRotationMatrix(matrix);
+  }, [pos]);
+
+  return (
+    <mesh position={pos} quaternion={quaternion}>
+      <planeGeometry args={[0.28, 0.07]} />
+      <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
+    </mesh>
+  );
 }
 
 function CountryBorders({ geojson }) {
@@ -69,31 +108,14 @@ function CountryBorders({ geojson }) {
   );
 }
 
-function CountryLabels({ geojson, zoom }) {
+function CountryLabels({ geojson }) {
   const centroids = useMemo(() => countryCentroids(geojson.features), [geojson]);
-  const fontSize = Math.max(0.018, Math.min(0.032, 0.025 / (zoom / 5)));
 
   return (
     <>
-      {centroids.map(({ name, lat, lng }) => {
-        const pos = latLngToVec3(lat, lng, LABEL_RADIUS);
-        return (
-          <Text
-            key={name}
-            position={pos}
-            fontSize={fontSize}
-            color="#ffffff"
-            anchorX="center"
-            anchorY="middle"
-            outlineWidth={0.003}
-            outlineColor="#000000"
-            outlineOpacity={0.6}
-            depthOffset={-1}
-          >
-            {name}
-          </Text>
-        );
-      })}
+      {centroids.map(({ name, lat, lng }) => (
+        <CountryLabel key={name} name={name} lat={lat} lng={lng} />
+      ))}
     </>
   );
 }
@@ -134,7 +156,7 @@ function Atmosphere() {
   );
 }
 
-function EarthMesh({ flights, onFlightClick, geojson, zoom }) {
+function EarthMesh({ flights, onFlightClick, geojson }) {
   const meshRef = useRef();
   const [colorMap, bumpMap] = useLoader(TextureLoader, [EARTH_TEXTURE, BUMP_TEXTURE]);
 
@@ -150,7 +172,7 @@ function EarthMesh({ flights, onFlightClick, geojson, zoom }) {
       </mesh>
       <Atmosphere />
       {geojson && <CountryBorders geojson={geojson} />}
-      {geojson && <CountryLabels geojson={geojson} zoom={zoom} />}
+      {geojson && <CountryLabels geojson={geojson} />}
       {flights.map((flight) => (
         <FlightMarker
           key={flight.discordId}
@@ -180,16 +202,8 @@ function FlightMarker({ flight, onClick }) {
   );
 }
 
-function CameraZoomTracker({ onZoom }) {
-  useFrame(({ camera }) => {
-    onZoom(camera.position.length());
-  });
-  return null;
-}
-
 export function Globe({ flights, onFlightClick }) {
   const [geojson, setGeojson] = useState(null);
-  const [zoom, setZoom] = useState(5);
 
   useEffect(() => {
     fetch('/countries.geojson')
@@ -209,9 +223,8 @@ export function Globe({ flights, onFlightClick }) {
       <pointLight position={[-10, -10, -10]} intensity={1.5} />
       <pointLight position={[0, 10, -10]} intensity={1.5} />
       <Suspense fallback={null}>
-        <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} zoom={zoom} />
+        <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} />
       </Suspense>
-      <CameraZoomTracker onZoom={setZoom} />
       <OrbitControls
         enableZoom={true}
         enablePan={false}
