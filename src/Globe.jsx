@@ -240,10 +240,18 @@ function buildAtcSectorLines(boundaries, activeFirIds) {
 function AtcAirportDot({ controller: c }) {
   const camDist = useContext(CamDistContext);
   const scale = camDist / 5;
-  const dotRadius = 0.008 * scale;
-  const pos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.015), [c.lat, c.lon]);
-  const labelPos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.08), [c.lat, c.lon]);
-  const texture = useMemo(() => makeLabelTexture(c.callsign), [c.callsign]);
+  const dotRadius = 0.007 * scale;
+  const labelHeight = RADIUS + 0.04 + dotRadius;
+  const pos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.012), [c.lat, c.lon]);
+  const labelPos = useMemo(() => latLngToVec3(c.lat, c.lon, labelHeight), [c.lat, c.lon, labelHeight]);
+
+  const { texture, object } = useMemo(() => {
+    const texture = makeLabelTexture(c.callsign);
+    const geo = new THREE.PlaneGeometry(0.24 * scale, 0.06 * scale);
+    const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+    return { texture, object: new THREE.Mesh(geo, mat) };
+  }, [c.callsign, scale]);
+
   const quaternion = useMemo(() => {
     const normal = labelPos.clone().normalize();
     const up = new THREE.Vector3(0, 1, 0);
@@ -252,32 +260,17 @@ function AtcAirportDot({ controller: c }) {
     return new THREE.Quaternion().setFromRotationMatrix(matrix);
   }, [labelPos]);
 
+  object.position.copy(labelPos);
+  object.quaternion.copy(quaternion);
+
   return (
     <group>
       <mesh position={pos}>
         <sphereGeometry args={[dotRadius, 6, 6]} />
-        <meshBasicMaterial color="#00eeff" depthTest={false} />
+        <meshBasicMaterial color="#00eeff" />
       </mesh>
-      <mesh position={labelPos} quaternion={quaternion} scale={[scale, scale, 1]}>
-        <planeGeometry args={[0.22, 0.055]} />
-        <meshBasicMaterial map={texture} transparent depthWrite={false} depthTest={false} side={THREE.DoubleSide} />
-      </mesh>
+      <primitive object={object} />
     </group>
-  );
-}
-
-function AtcSectorLines({ geometry }) {
-  const ref = useRef();
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.material.color.set(0x00eeff);
-      ref.current.material.needsUpdate = true;
-    }
-  }, [geometry]);
-  return (
-    <lineSegments ref={ref} geometry={geometry}>
-      <lineBasicMaterial color={0x00eeff} transparent opacity={0.85} depthWrite={false} depthTest={false} />
-    </lineSegments>
   );
 }
 
@@ -285,11 +278,8 @@ function AtcOverlay({ controllers, boundaries }) {
   const firIds = useMemo(() => {
     const ids = new Set();
     for (const c of controllers) {
-      if (FIR_FACILITIES.has(c.facility)) {
-        ids.add(c.callsign.split('_')[0]);
-      }
+      if (FIR_FACILITIES.has(c.facility)) ids.add(c.callsign.split('_')[0]);
     }
-    console.log('[ATC] FIR ids:', [...ids], '| airport controllers:', controllers.filter(c => AIRPORT_FACILITIES.has(c.facility)).length);
     return ids;
   }, [controllers]);
 
@@ -298,18 +288,20 @@ function AtcOverlay({ controllers, boundaries }) {
     [controllers]
   );
 
-  const sectorGeometry = useMemo(() => {
+  // Build Three.js objects imperatively so colour/material are guaranteed
+  const sectorObject = useMemo(() => {
     if (!boundaries || firIds.size === 0) return null;
     const positions = buildAtcSectorLines(boundaries, firIds);
     if (positions.length === 0) return null;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    return geo;
+    const mat = new THREE.LineBasicMaterial({ color: 0x00eeff, transparent: true, opacity: 0.85, depthWrite: false });
+    return new THREE.LineSegments(geo, mat);
   }, [boundaries, firIds]);
 
   return (
     <>
-      {sectorGeometry && <AtcSectorLines geometry={sectorGeometry} />}
+      {sectorObject && <primitive object={sectorObject} />}
       {airportControllers.map((c) => (
         <AtcAirportDot key={c.callsign} controller={c} />
       ))}
