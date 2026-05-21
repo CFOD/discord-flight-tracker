@@ -266,6 +266,21 @@ function AtcAirportDot({ controller: c }) {
   );
 }
 
+function AtcSectorLines({ geometry }) {
+  const ref = useRef();
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.material.color.set(0x00eeff);
+      ref.current.material.needsUpdate = true;
+    }
+  }, [geometry]);
+  return (
+    <lineSegments ref={ref} geometry={geometry}>
+      <lineBasicMaterial color={0x00eeff} transparent opacity={0.85} depthWrite={false} depthTest={false} />
+    </lineSegments>
+  );
+}
+
 function AtcOverlay({ controllers, boundaries }) {
   const firIds = useMemo(() => {
     const ids = new Set();
@@ -274,11 +289,12 @@ function AtcOverlay({ controllers, boundaries }) {
         ids.add(c.callsign.split('_')[0]);
       }
     }
+    console.log('[ATC] FIR ids:', [...ids], '| airport controllers:', controllers.filter(c => AIRPORT_FACILITIES.has(c.facility)).length);
     return ids;
-  }, [controllers, boundaries]);
+  }, [controllers]);
 
   const airportControllers = useMemo(
-    () => controllers.filter((c) => AIRPORT_FACILITIES.has(c.facility)),
+    () => controllers.filter((c) => AIRPORT_FACILITIES.has(c.facility) && c.lat && c.lon),
     [controllers]
   );
 
@@ -293,12 +309,8 @@ function AtcOverlay({ controllers, boundaries }) {
 
   return (
     <>
-      {sectorGeometry && (() => {
-        const mat = new THREE.LineBasicMaterial({ color: 0x00eeff, transparent: true, opacity: 0.85, depthWrite: false });
-        const obj = new THREE.LineSegments(sectorGeometry, mat);
-        return <primitive object={obj} />;
-      })()}
-      {airportControllers.filter((c) => c.lat && c.lon).map((c) => (
+      {sectorGeometry && <AtcSectorLines geometry={sectorGeometry} />}
+      {airportControllers.map((c) => (
         <AtcAirportDot key={c.callsign} controller={c} />
       ))}
     </>
