@@ -64,14 +64,14 @@ function FlightRoute({ flight }) {
   const { waypoints, color } = flight;
   const routeColor = color ?? '#f0cb00';
 
-  const { tubeGeom, flownGeom, progressIndex } = useMemo(() => {
+  const { tubeGeom, flownLineGeom } = useMemo(() => {
     const curve = buildRoutePoints(waypoints);
     if (!curve) return {};
 
     const totalPoints = Math.max(waypoints.length * 4, 120);
     const tubeGeom = new THREE.TubeGeometry(curve, totalPoints, 0.004, 6, false);
 
-    // Work out how far along the route the plane currently is
+    // Find closest point on the curve to current plane position
     const allPositions = curve.getPoints(totalPoints);
     const planeVec = latLngToVec3(flight.lat, flight.lon, RADIUS);
     let closestIdx = 0;
@@ -81,30 +81,32 @@ function FlightRoute({ flight }) {
       if (d < closestDist) { closestDist = d; closestIdx = i; }
     });
 
-    // Flown portion: departure → current position
-    const flownPoints = allPositions.slice(0, closestIdx + 1);
-    let flownGeom = null;
-    if (flownPoints.length >= 2) {
-      const flownCurve = new THREE.CatmullRomCurve3(flownPoints);
-      flownGeom = new THREE.TubeGeometry(flownCurve, flownPoints.length * 2, 0.003, 6, false);
+    // Flown portion as a simple line (avoids CatmullRom re-interpolation distortion)
+    let flownLineGeom = null;
+    if (closestIdx >= 1) {
+      const flownPositions = new Float32Array(
+        allPositions.slice(0, closestIdx + 1).flatMap((p) => [p.x, p.y, p.z])
+      );
+      flownLineGeom = new THREE.BufferGeometry();
+      flownLineGeom.setAttribute('position', new THREE.BufferAttribute(flownPositions, 3));
     }
 
-    return { tubeGeom, flownGeom, progressIndex: closestIdx };
+    return { tubeGeom, flownLineGeom };
   }, [waypoints, flight.lat, flight.lon]);
 
   if (!tubeGeom) return null;
 
   return (
     <group>
-      {/* Unflown route — faint */}
+      {/* Full route — faint tube */}
       <mesh geometry={tubeGeom}>
-        <meshBasicMaterial color={routeColor} transparent opacity={0.25} depthWrite={false} />
+        <meshBasicMaterial color={routeColor} transparent opacity={0.2} depthWrite={false} />
       </mesh>
-      {/* Flown portion — bright */}
-      {flownGeom && (
-        <mesh geometry={flownGeom}>
-          <meshBasicMaterial color={routeColor} transparent opacity={0.75} depthWrite={false} />
-        </mesh>
+      {/* Flown portion — bright line */}
+      {flownLineGeom && (
+        <line geometry={flownLineGeom}>
+          <lineBasicMaterial color={routeColor} transparent opacity={0.9} depthWrite={false} />
+        </line>
       )}
     </group>
   );
@@ -235,7 +237,6 @@ function AtcOverlay({ controllers, boundaries }) {
         ids.add(c.callsign.split('_')[0]);
       }
     }
-    console.log('[ATC] controllers:', controllers.length, 'FIR ids:', [...ids], 'boundaries loaded:', !!boundaries);
     return ids;
   }, [controllers, boundaries]);
 
@@ -256,16 +257,29 @@ function AtcOverlay({ controllers, boundaries }) {
           <bufferGeometry>
             <bufferAttribute attach="attributes-position" args={[sectorPositions, 3]} />
           </bufferGeometry>
-          <lineBasicMaterial color="#00cfff" transparent opacity={0.5} depthWrite={false} />
+          <lineBasicMaterial color="#00eeff" transparent opacity={0.75} depthWrite={false} />
         </lineSegments>
       )}
-      {airportControllers.map((c) => {
+      {airportControllers.filter((c) => c.lat && c.lon).map((c) => {
         const pos = latLngToVec3(c.lat, c.lon, RADIUS + 0.025);
+        const labelPos = latLngToVec3(c.lat, c.lon, RADIUS + 0.055);
+        const normal = labelPos.clone().normalize();
+        const up = new THREE.Vector3(0, 1, 0);
+        const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
+        const matrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0, 0, 0), safeUp);
+        const quaternion = new THREE.Quaternion().setFromRotationMatrix(matrix);
+        const texture = makeLabelTexture(c.callsign);
         return (
-          <mesh key={c.callsign} position={pos}>
-            <sphereGeometry args={[0.012, 6, 6]} />
-            <meshBasicMaterial color="#00cfff" transparent opacity={0.8} />
-          </mesh>
+          <group key={c.callsign}>
+            <mesh position={pos}>
+              <sphereGeometry args={[0.014, 6, 6]} />
+              <meshBasicMaterial color="#00eeff" />
+            </mesh>
+            <mesh position={labelPos} quaternion={quaternion}>
+              <planeGeometry args={[0.22, 0.055]} />
+              <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
+            </mesh>
+          </group>
         );
       })}
     </>
