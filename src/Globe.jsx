@@ -83,7 +83,7 @@ function CountryLabel({ name, lat, lng }) {
     const up = new THREE.Vector3(0, 1, 0);
     // If normal is nearly parallel to up, use a different up vector
     const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
-    const matrix = new THREE.Matrix4().lookAt(new THREE.Vector3(0, 0, 0), normal, safeUp);
+    const matrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0, 0, 0), safeUp);
     return new THREE.Quaternion().setFromRotationMatrix(matrix);
   }, [pos]);
 
