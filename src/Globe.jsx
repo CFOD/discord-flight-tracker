@@ -1,12 +1,14 @@
-import { useRef, useState, Suspense } from 'react';
+import { useRef, useState, Suspense, useEffect, useMemo } from 'react';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { OrbitControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
 
 const EARTH_TEXTURE = '/textures/earth-blue-marble.jpg';
 const BUMP_TEXTURE = '/textures/earth-topology.png';
 const RADIUS = 2;
+const BORDER_RADIUS = RADIUS + 0.003;
+const LABEL_RADIUS = RADIUS + 0.01;
 
 function latLngToVec3(lat, lng, radius) {
   const phi = (90 - lat) * (Math.PI / 180);
@@ -15,6 +17,84 @@ function latLngToVec3(lat, lng, radius) {
     -radius * Math.sin(phi) * Math.cos(theta),
     radius * Math.cos(phi),
     radius * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+function polygonToLines(coords, radius) {
+  const points = [];
+  for (let i = 0; i < coords.length - 1; i++) {
+    const [lng1, lat1] = coords[i];
+    const [lng2, lat2] = coords[i + 1];
+    const v1 = latLngToVec3(lat1, lng1, radius);
+    const v2 = latLngToVec3(lat2, lng2, radius);
+    points.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
+  }
+  return points;
+}
+
+function geojsonToLineSegments(features, radius) {
+  const allPoints = [];
+  for (const feature of features) {
+    const { type, coordinates } = feature.geometry;
+    const rings = type === 'Polygon' ? coordinates : type === 'MultiPolygon' ? coordinates.flat() : [];
+    for (const ring of rings) {
+      allPoints.push(...polygonToLines(ring, radius));
+    }
+  }
+  return new Float32Array(allPoints);
+}
+
+function countryCentroids(features) {
+  return features.map((f) => {
+    const { type, coordinates } = f.geometry;
+    const ring = type === 'Polygon' ? coordinates[0] : coordinates[0][0];
+    let sumLng = 0, sumLat = 0;
+    for (const [lng, lat] of ring) { sumLng += lng; sumLat += lat; }
+    const avgLng = sumLng / ring.length;
+    const avgLat = sumLat / ring.length;
+    return { name: f.properties.name, lat: avgLat, lng: avgLng };
+  });
+}
+
+function CountryBorders({ geojson }) {
+  const positions = useMemo(() => geojsonToLineSegments(geojson.features, BORDER_RADIUS), [geojson]);
+
+  return (
+    <lineSegments>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+      </bufferGeometry>
+      <lineBasicMaterial color="#ffffff" transparent opacity={0.25} depthWrite={false} />
+    </lineSegments>
+  );
+}
+
+function CountryLabels({ geojson, zoom }) {
+  const centroids = useMemo(() => countryCentroids(geojson.features), [geojson]);
+  const fontSize = Math.max(0.018, Math.min(0.032, 0.025 / (zoom / 5)));
+
+  return (
+    <>
+      {centroids.map(({ name, lat, lng }) => {
+        const pos = latLngToVec3(lat, lng, LABEL_RADIUS);
+        return (
+          <Text
+            key={name}
+            position={pos}
+            fontSize={fontSize}
+            color="#ffffff"
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.003}
+            outlineColor="#000000"
+            outlineOpacity={0.6}
+            depthOffset={-1}
+          >
+            {name}
+          </Text>
+        );
+      })}
+    </>
   );
 }
 
@@ -54,7 +134,7 @@ function Atmosphere() {
   );
 }
 
-function EarthMesh({ flights, onFlightClick }) {
+function EarthMesh({ flights, onFlightClick, geojson, zoom }) {
   const meshRef = useRef();
   const [colorMap, bumpMap] = useLoader(TextureLoader, [EARTH_TEXTURE, BUMP_TEXTURE]);
 
@@ -69,11 +149,12 @@ function EarthMesh({ flights, onFlightClick }) {
         <meshStandardMaterial map={colorMap} bumpMap={bumpMap} bumpScale={0.02} roughness={0.3} metalness={0.05} />
       </mesh>
       <Atmosphere />
+      {geojson && <CountryBorders geojson={geojson} />}
+      {geojson && <CountryLabels geojson={geojson} zoom={zoom} />}
       {flights.map((flight) => (
         <FlightMarker
           key={flight.discordId}
           flight={flight}
-          earthRef={meshRef}
           onClick={onFlightClick}
         />
       ))}
@@ -81,7 +162,7 @@ function EarthMesh({ flights, onFlightClick }) {
   );
 }
 
-function FlightMarker({ flight, earthRef, onClick }) {
+function FlightMarker({ flight, onClick }) {
   const [hovered, setHovered] = useState(false);
   const pos = latLngToVec3(flight.lat, flight.lon, RADIUS + 0.04);
   const color = flight.color ?? '#f0cb00';
@@ -99,11 +180,24 @@ function FlightMarker({ flight, earthRef, onClick }) {
   );
 }
 
-function GlobeLoader() {
+function CameraZoomTracker({ onZoom }) {
+  useFrame(({ camera }) => {
+    onZoom(camera.position.length());
+  });
   return null;
 }
 
 export function Globe({ flights, onFlightClick }) {
+  const [geojson, setGeojson] = useState(null);
+  const [zoom, setZoom] = useState(5);
+
+  useEffect(() => {
+    fetch('/countries.geojson')
+      .then((r) => r.json())
+      .then(setGeojson)
+      .catch(console.error);
+  }, []);
+
   return (
     <Canvas
       camera={{ position: [0, 0, 5], fov: 45 }}
@@ -114,9 +208,10 @@ export function Globe({ flights, onFlightClick }) {
       <pointLight position={[10, 10, 10]} intensity={3.0} />
       <pointLight position={[-10, -10, -10]} intensity={1.5} />
       <pointLight position={[0, 10, -10]} intensity={1.5} />
-      <Suspense fallback={<GlobeLoader />}>
-        <EarthMesh flights={flights} onFlightClick={onFlightClick} />
+      <Suspense fallback={null}>
+        <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} zoom={zoom} />
       </Suspense>
+      <CameraZoomTracker onZoom={setZoom} />
       <OrbitControls
         enableZoom={true}
         enablePan={false}
