@@ -237,44 +237,9 @@ function buildAtcSectorLines(boundaries, activeFirIds) {
   return new Float32Array(points);
 }
 
-function AtcAirportDot({ controller: c }) {
-  const camDist = useContext(CamDistContext);
-  const scale = camDist / 5;
-  const dotRadius = 0.007 * scale;
-  const labelHeight = RADIUS + 0.04 + dotRadius;
-  const pos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.012), [c.lat, c.lon]);
-  const labelPos = useMemo(() => latLngToVec3(c.lat, c.lon, labelHeight), [c.lat, c.lon, labelHeight]);
-
-  const { texture, object } = useMemo(() => {
-    const texture = makeLabelTexture(c.callsign);
-    const geo = new THREE.PlaneGeometry(0.24 * scale, 0.06 * scale);
-    const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, side: THREE.DoubleSide });
-    return { texture, object: new THREE.Mesh(geo, mat) };
-  }, [c.callsign, scale]);
-
-  const quaternion = useMemo(() => {
-    const normal = labelPos.clone().normalize();
-    const up = new THREE.Vector3(0, 1, 0);
-    const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
-    const matrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0, 0, 0), safeUp);
-    return new THREE.Quaternion().setFromRotationMatrix(matrix);
-  }, [labelPos]);
-
-  object.position.copy(labelPos);
-  object.quaternion.copy(quaternion);
-
-  return (
-    <group>
-      <mesh position={pos}>
-        <sphereGeometry args={[dotRadius, 6, 6]} />
-        <meshBasicMaterial color="#00eeff" />
-      </mesh>
-      <primitive object={object} />
-    </group>
-  );
-}
-
 function AtcOverlay({ controllers, boundaries }) {
+  const groupRef = useRef();
+
   const firIds = useMemo(() => {
     const ids = new Set();
     for (const c of controllers) {
@@ -288,25 +253,56 @@ function AtcOverlay({ controllers, boundaries }) {
     [controllers]
   );
 
-  // Build Three.js objects imperatively so colour/material are guaranteed
-  const sectorObject = useMemo(() => {
-    if (!boundaries || firIds.size === 0) return null;
-    const positions = buildAtcSectorLines(boundaries, firIds);
-    if (positions.length === 0) return null;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const mat = new THREE.LineBasicMaterial({ color: 0x00eeff, transparent: true, opacity: 0.85, depthWrite: false });
-    return new THREE.LineSegments(geo, mat);
-  }, [boundaries, firIds]);
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
 
-  return (
-    <>
-      {sectorObject && <primitive object={sectorObject} />}
-      {airportControllers.map((c) => (
-        <AtcAirportDot key={c.callsign} controller={c} />
-      ))}
-    </>
-  );
+    // Clear previous children
+    while (group.children.length) group.remove(group.children[0]);
+
+    // --- Sector lines ---
+    if (boundaries && firIds.size > 0) {
+      const positions = buildAtcSectorLines(boundaries, firIds);
+      if (positions.length > 0) {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const mat = new THREE.LineBasicMaterial({ color: 0x00eeff, transparent: true, opacity: 0.85, depthWrite: false });
+        group.add(new THREE.LineSegments(geo, mat));
+      }
+    }
+
+    // --- Airport controller dots + labels ---
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0x00eeff });
+    const dotGeo = new THREE.SphereGeometry(0.01, 6, 6);
+
+    for (const c of airportControllers) {
+      const dot = new THREE.Mesh(dotGeo, dotMat);
+      dot.position.copy(latLngToVec3(c.lat, c.lon, RADIUS + 0.012));
+      group.add(dot);
+
+      // Label
+      const labelPos = latLngToVec3(c.lat, c.lon, RADIUS + 0.06);
+      const normal = labelPos.clone().normalize();
+      const up = Math.abs(normal.dot(new THREE.Vector3(0,1,0))) > 0.99
+        ? new THREE.Vector3(1,0,0) : new THREE.Vector3(0,1,0);
+      const matrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0,0,0), up);
+      const quat = new THREE.Quaternion().setFromRotationMatrix(matrix);
+
+      const tex = makeLabelTexture(c.callsign);
+      const labelGeo = new THREE.PlaneGeometry(0.24, 0.06);
+      const labelMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+      const label = new THREE.Mesh(labelGeo, labelMat);
+      label.position.copy(labelPos);
+      label.quaternion.copy(quat);
+      group.add(label);
+    }
+
+    return () => {
+      while (group.children.length) group.remove(group.children[0]);
+    };
+  }, [boundaries, firIds, airportControllers]);
+
+  return <group ref={groupRef} />;
 }
 
 function Atmosphere() {
