@@ -235,8 +235,9 @@ function AtcOverlay({ controllers, boundaries }) {
         ids.add(c.callsign.split('_')[0]);
       }
     }
+    console.log('[ATC] controllers:', controllers.length, 'FIR ids:', [...ids], 'boundaries loaded:', !!boundaries);
     return ids;
-  }, [controllers]);
+  }, [controllers, boundaries]);
 
   const airportControllers = useMemo(
     () => controllers.filter((c) => AIRPORT_FACILITIES.has(c.facility)),
@@ -367,8 +368,11 @@ export function Globe({ flights, controllers, onFlightClick }) {
   useEffect(() => {
     fetch(BOUNDARIES_URL)
       .then((r) => r.json())
-      .then(setBoundaries)
-      .catch(console.error);
+      .then((data) => {
+        console.log('[Boundaries] loaded', data.features?.length, 'features');
+        setBoundaries(data);
+      })
+      .catch((e) => console.error('[Boundaries] fetch failed', e));
   }, []);
 
   return (
