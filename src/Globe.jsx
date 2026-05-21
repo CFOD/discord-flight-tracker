@@ -4,8 +4,8 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
 
-const EARTH_TEXTURE = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-blue-marble.jpg';
-const BUMP_TEXTURE = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-topology.png';
+const EARTH_TEXTURE = '/textures/earth-blue-marble.jpg';
+const BUMP_TEXTURE = '/textures/earth-topology.png';
 const RADIUS = 2;
 
 function latLngToVec3(lat, lng, radius) {
