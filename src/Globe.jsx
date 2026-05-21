@@ -241,8 +241,8 @@ function AtcAirportDot({ controller: c }) {
   const camDist = useContext(CamDistContext);
   const scale = camDist / 5;
   const dotRadius = 0.008 * scale;
-  const pos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.012), [c.lat, c.lon]);
-  const labelPos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.05), [c.lat, c.lon]);
+  const pos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.015), [c.lat, c.lon]);
+  const labelPos = useMemo(() => latLngToVec3(c.lat, c.lon, RADIUS + 0.08), [c.lat, c.lon]);
   const texture = useMemo(() => makeLabelTexture(c.callsign), [c.callsign]);
   const quaternion = useMemo(() => {
     const normal = labelPos.clone().normalize();
@@ -256,11 +256,11 @@ function AtcAirportDot({ controller: c }) {
     <group>
       <mesh position={pos}>
         <sphereGeometry args={[dotRadius, 6, 6]} />
-        <meshBasicMaterial color="#00eeff" />
+        <meshBasicMaterial color="#00eeff" depthTest={false} />
       </mesh>
       <mesh position={labelPos} quaternion={quaternion} scale={[scale, scale, 1]}>
         <planeGeometry args={[0.22, 0.055]} />
-        <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
+        <meshBasicMaterial map={texture} transparent depthWrite={false} depthTest={false} side={THREE.DoubleSide} />
       </mesh>
     </group>
   );
@@ -293,11 +293,11 @@ function AtcOverlay({ controllers, boundaries }) {
 
   return (
     <>
-      {sectorGeometry && (
-        <lineSegments geometry={sectorGeometry}>
-          <lineBasicMaterial color="#00eeff" transparent opacity={0.75} depthWrite={false} />
-        </lineSegments>
-      )}
+      {sectorGeometry && (() => {
+        const mat = new THREE.LineBasicMaterial({ color: 0x00eeff, transparent: true, opacity: 0.85, depthWrite: false });
+        const obj = new THREE.LineSegments(sectorGeometry, mat);
+        return <primitive object={obj} />;
+      })()}
       {airportControllers.filter((c) => c.lat && c.lon).map((c) => (
         <AtcAirportDot key={c.callsign} controller={c} />
       ))}
@@ -341,12 +341,12 @@ function Atmosphere() {
   );
 }
 
-function EarthMesh({ flights, onFlightClick, geojson, controllers, boundaries }) {
+function EarthMesh({ flights, onFlightClick, geojson, controllers, boundaries, rotating }) {
   const meshRef = useRef();
   const [colorMap, bumpMap] = useLoader(TextureLoader, [EARTH_TEXTURE, BUMP_TEXTURE]);
 
   useFrame((_, delta) => {
-    if (meshRef.current) meshRef.current.rotation.y += delta * 0.05;
+    if (meshRef.current && rotating) meshRef.current.rotation.y += delta * 0.05;
   });
 
   return (
@@ -407,6 +407,7 @@ export function Globe({ flights, controllers, onFlightClick }) {
   const [geojson, setGeojson] = useState(null);
   const [boundaries, setBoundaries] = useState(null);
   const [camDist, setCamDist] = useState(5);
+  const [rotating, setRotating] = useState(true);
 
   useEffect(() => {
     fetch('/countries.geojson')
@@ -430,6 +431,8 @@ export function Globe({ flights, controllers, onFlightClick }) {
       camera={{ position: [0, 0, 5], fov: 45 }}
       style={{ width: '100%', height: '100%' }}
       gl={{ antialias: true, alpha: true }}
+      onPointerDown={() => setRotating(false)}
+      onWheel={() => setRotating(false)}
     >
       <CamDistContext.Provider value={camDist}>
         <ambientLight intensity={4.0} />
@@ -437,7 +440,7 @@ export function Globe({ flights, controllers, onFlightClick }) {
         <pointLight position={[-10, -10, -10]} intensity={1.5} />
         <pointLight position={[0, 10, -10]} intensity={1.5} />
         <Suspense fallback={null}>
-          <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} controllers={controllers} boundaries={boundaries} />
+          <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} controllers={controllers} boundaries={boundaries} rotating={rotating} />
         </Suspense>
         <CameraTracker onUpdate={setCamDist} />
         <OrbitControls
