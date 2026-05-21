@@ -9,6 +9,7 @@ const BUMP_TEXTURE = '/textures/earth-topology.png';
 const RADIUS = 2;
 const BORDER_RADIUS = RADIUS + 0.003;
 const LABEL_RADIUS = RADIUS + 0.012;
+const MAX_CRUISE_LIFT = 0.18; // max lift above surface at cruise altitude
 
 function latLngToVec3(lat, lng, radius) {
   const phi = (90 - lat) * (Math.PI / 180);
@@ -17,6 +18,88 @@ function latLngToVec3(lat, lng, radius) {
     -radius * Math.sin(phi) * Math.cos(theta),
     radius * Math.cos(phi),
     radius * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+// Realistic flight altitude profile: quick climb, long cruise, quick descent.
+// t = 0..1 along route. Returns 0..1 lift factor.
+function flightProfile(t) {
+  const climbEnd = 0.12;
+  const descentStart = 0.82;
+  if (t < climbEnd) {
+    // Steep climb — use power curve so it rises quickly
+    return Math.pow(t / climbEnd, 0.5);
+  } else if (t > descentStart) {
+    // Descent back to surface
+    return Math.pow(1 - (t - descentStart) / (1 - descentStart), 0.5);
+  }
+  return 1.0; // cruise
+}
+
+function buildRoutePoints(waypoints) {
+  if (!waypoints || waypoints.length < 2) return null;
+
+  const points = [];
+  const n = waypoints.length;
+
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const lift = flightProfile(t) * MAX_CRUISE_LIFT;
+    const { lat, lon } = waypoints[i];
+    points.push(latLngToVec3(lat, lon, RADIUS + lift));
+  }
+
+  // CatmullRom through the points for a smooth tube
+  return new THREE.CatmullRomCurve3(points);
+}
+
+function FlightRoute({ flight }) {
+  const { waypoints, color } = flight;
+  const routeColor = color ?? '#f0cb00';
+
+  const { tubeGeom, flownGeom, progressIndex } = useMemo(() => {
+    const curve = buildRoutePoints(waypoints);
+    if (!curve) return {};
+
+    const totalPoints = Math.max(waypoints.length * 4, 120);
+    const tubeGeom = new THREE.TubeGeometry(curve, totalPoints, 0.004, 6, false);
+
+    // Work out how far along the route the plane currently is
+    const allPositions = curve.getPoints(totalPoints);
+    const planeVec = latLngToVec3(flight.lat, flight.lon, RADIUS);
+    let closestIdx = 0;
+    let closestDist = Infinity;
+    allPositions.forEach((p, i) => {
+      const d = p.distanceTo(planeVec);
+      if (d < closestDist) { closestDist = d; closestIdx = i; }
+    });
+
+    // Flown portion: departure → current position
+    const flownPoints = allPositions.slice(0, closestIdx + 1);
+    let flownGeom = null;
+    if (flownPoints.length >= 2) {
+      const flownCurve = new THREE.CatmullRomCurve3(flownPoints);
+      flownGeom = new THREE.TubeGeometry(flownCurve, flownPoints.length * 2, 0.003, 6, false);
+    }
+
+    return { tubeGeom, flownGeom, progressIndex: closestIdx };
+  }, [waypoints, flight.lat, flight.lon]);
+
+  if (!tubeGeom) return null;
+
+  return (
+    <group>
+      {/* Unflown route — faint */}
+      <mesh geometry={tubeGeom}>
+        <meshBasicMaterial color={routeColor} transparent opacity={0.25} depthWrite={false} />
+      </mesh>
+      {/* Flown portion — bright */}
+      {flownGeom && (
+        <mesh geometry={flownGeom}>
+          <meshBasicMaterial color={routeColor} transparent opacity={0.75} depthWrite={false} />
+        </mesh>
+      )}
+    </group>
   );
 }
 
@@ -77,11 +160,9 @@ function CountryLabel({ name, lat, lng }) {
   const texture = useMemo(() => makeLabelTexture(name), [name]);
   const pos = useMemo(() => latLngToVec3(lat, lng, LABEL_RADIUS), [lat, lng]);
 
-  // Orient the plane to face outward from the sphere surface
   const quaternion = useMemo(() => {
     const normal = pos.clone().normalize();
     const up = new THREE.Vector3(0, 1, 0);
-    // If normal is nearly parallel to up, use a different up vector
     const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
     const matrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0, 0, 0), safeUp);
     return new THREE.Quaternion().setFromRotationMatrix(matrix);
@@ -174,11 +255,10 @@ function EarthMesh({ flights, onFlightClick, geojson }) {
       {geojson && <CountryBorders geojson={geojson} />}
       {geojson && <CountryLabels geojson={geojson} />}
       {flights.map((flight) => (
-        <FlightMarker
-          key={flight.discordId}
-          flight={flight}
-          onClick={onFlightClick}
-        />
+        <group key={flight.discordId}>
+          {flight.waypoints?.length >= 2 && <FlightRoute flight={flight} />}
+          <FlightMarker flight={flight} onClick={onFlightClick} />
+        </group>
       ))}
     </group>
   );
