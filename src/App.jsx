@@ -1,8 +1,9 @@
-import { useState, Suspense } from 'react';
+import { useState, Suspense, useEffect } from 'react';
 import { useFlights } from './useFlights.js';
 import { Globe } from './Globe.jsx';
 import { FlightCard } from './FlightCard.jsx';
 import { FlightSidebar } from './FlightSidebar.jsx';
+import { setupDiscord } from './setupDiscord.js';
 
 function LoadingScreen() {
   return (
@@ -49,6 +50,17 @@ function FlightGlobe() {
 }
 
 export default function App() {
+  const [sdkReady, setSdkReady] = useState(import.meta.env.DEV);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) return;
+    setupDiscord()
+      .then(() => setSdkReady(true))
+      .catch((e) => { console.error('[setupDiscord]', e); setSdkReady(true); });
+  }, []);
+
+  if (!sdkReady) return <LoadingScreen />;
+
   return (
     <Suspense fallback={<LoadingScreen />}>
       <FlightGlobe />
