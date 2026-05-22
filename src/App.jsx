@@ -2,6 +2,7 @@ import { useState, Suspense } from 'react';
 import { useFlights } from './useFlights.js';
 import { Globe } from './Globe.jsx';
 import { FlightCard } from './FlightCard.jsx';
+import { FlightSidebar } from './FlightSidebar.jsx';
 
 function LoadingScreen() {
   return (
@@ -12,7 +13,7 @@ function LoadingScreen() {
 }
 
 function FlightGlobe() {
-  const { flights, controllers } = useFlights();
+  const { flights, controllers, users } = useFlights();
   const [selected, setSelected] = useState(null);
   const [cardPos, setCardPos] = useState({ x: 0, y: 0 });
 
@@ -35,11 +36,14 @@ function FlightGlobe() {
           onClose={() => setSelected(null)}
         />
       )}
-      {flights.length === 0 && (
-        <div style={{ position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', color: '#666', fontSize: 13, pointerEvents: 'none' }}>
-          No active flights
-        </div>
-      )}
+      <FlightSidebar
+        users={users}
+        flights={flights}
+        onFlightClick={(flight) => {
+          setSelected(flight);
+          setCardPos({ x: window.innerWidth - 280, y: window.innerHeight / 2 });
+        }}
+      />
     </div>
   );
 }

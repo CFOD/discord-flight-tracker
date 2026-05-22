@@ -9,6 +9,7 @@ const RECONNECT_MAX_MS = 30000;
 export function useFlights() {
   const [flights, setFlights] = useState([]);
   const [controllers, setControllers] = useState([]);
+  const [users, setUsers] = useState([]);
   const retryDelay = useRef(RECONNECT_BASE_MS);
   const timeoutRef = useRef(null);
   const wsRef = useRef(null);
@@ -29,6 +30,8 @@ export function useFlights() {
             retryDelay.current = RECONNECT_BASE_MS;
           } else if (msg.type === 'atc') {
             setControllers(msg.controllers);
+          } else if (msg.type === 'users') {
+            setUsers(msg.users);
           }
         } catch (_) {}
       };
@@ -53,5 +56,5 @@ export function useFlights() {
     };
   }, []);
 
-  return { flights, controllers };
+  return { flights, controllers, users };
 }
