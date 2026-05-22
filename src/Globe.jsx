@@ -198,12 +198,22 @@ function CountryLabel({ name, lat, lng, opacity = 1 }) {
 }
 
 function CountryBorders({ geojson }) {
-  const geometry = useMemo(() => {
-    const positions = geojsonToLineSegments(geojson.features, BORDER_RADIUS);
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    return geo;
+  const [geometry, setGeometry] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Yield to the renderer first, then build geometry off the hot path
+    const id = setTimeout(() => {
+      const positions = geojsonToLineSegments(geojson.features, BORDER_RADIUS);
+      if (cancelled) return;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      setGeometry(geo);
+    }, 0);
+    return () => { cancelled = true; clearTimeout(id); };
   }, [geojson]);
+
+  if (!geometry) return null;
 
   return (
     <lineSegments geometry={geometry}>
