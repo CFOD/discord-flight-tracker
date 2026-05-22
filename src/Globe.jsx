@@ -69,22 +69,59 @@ function buildRoutePoints(waypoints) {
   return new THREE.CatmullRomCurve3(points);
 }
 
+// Soften a hex colour for route lines — desaturate and reduce brightness
+function softenColor(hex) {
+  const c = new THREE.Color(hex ?? '#f0cb00');
+  const hsl = {};
+  c.getHSL(hsl);
+  c.setHSL(hsl.h, hsl.s * 0.55, Math.min(hsl.l * 0.75 + 0.15, 0.65));
+  return '#' + c.getHexString();
+}
+
+function buildPlaneShape() {
+  const s = new THREE.Shape();
+  // Top-down aircraft silhouette, nose pointing +Y
+  // Fuselage
+  s.moveTo(0, 0.5);
+  s.lineTo(0.06, 0.3);
+  s.lineTo(0.05, -0.1);
+  // Right wing
+  s.lineTo(0.5, -0.05);
+  s.lineTo(0.48, -0.18);
+  s.lineTo(0.05, -0.22);
+  // Tail right
+  s.lineTo(0.18, -0.5);
+  s.lineTo(0.12, -0.52);
+  s.lineTo(0, -0.38);
+  // Tail left
+  s.lineTo(-0.12, -0.52);
+  s.lineTo(-0.18, -0.5);
+  s.lineTo(-0.05, -0.22);
+  // Left wing
+  s.lineTo(-0.48, -0.18);
+  s.lineTo(-0.5, -0.05);
+  s.lineTo(-0.05, -0.1);
+  s.lineTo(-0.06, 0.3);
+  s.closePath();
+  return s;
+}
+
+const PLANE_SHAPE = buildPlaneShape();
+
 function FlightRoute({ flight }) {
   const { waypoints, color } = flight;
-  const routeColor = color ?? '#f0cb00';
+  const routeColor = softenColor(color);
   const camDist = useContext(CamDistContext);
-  const tubeRadius = 0.0015 * (camDist / 5);
-  const waypointDotRadius = 0.004 * (camDist / 5);
+  const waypointDotRadius = 0.003 * (camDist / 5);
 
-  const { tubeGeom, flownLineGeom, waypointPositions } = useMemo(() => {
+  const { unflownGeom, flownGeom, waypointPositions } = useMemo(() => {
     const curve = buildRoutePoints(waypoints);
     if (!curve) return {};
 
     const totalPoints = Math.max(waypoints.length * 4, 120);
-    const tubeGeom = new THREE.TubeGeometry(curve, totalPoints, tubeRadius, 5, false);
-
-    // Find closest point on the curve to current plane position
     const allPositions = curve.getPoints(totalPoints);
+
+    // Split into flown / unflown at closest point to current plane position
     const planeVec = latLngToVec3(flight.lat, flight.lon, RADIUS);
     let closestIdx = 0;
     let closestDist = Infinity;
@@ -93,42 +130,44 @@ function FlightRoute({ flight }) {
       if (d < closestDist) { closestDist = d; closestIdx = i; }
     });
 
-    let flownLineGeom = null;
-    if (closestIdx >= 1) {
-      const flownPositions = new Float32Array(
-        allPositions.slice(0, closestIdx + 1).flatMap((p) => [p.x, p.y, p.z])
-      );
-      flownLineGeom = new THREE.BufferGeometry();
-      flownLineGeom.setAttribute('position', new THREE.BufferAttribute(flownPositions, 3));
-    }
+    const toArr = (pts) => new Float32Array(pts.flatMap((p) => [p.x, p.y, p.z]));
 
-    // Waypoint positions (skip first/last — those are origin/dest airports)
+    const makeLineGeom = (pts) => {
+      if (pts.length < 2) return null;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(toArr(pts), 3));
+      return g;
+    };
+
+    const unflownGeom = makeLineGeom(allPositions.slice(closestIdx));
+    const flownGeom = closestIdx >= 1 ? makeLineGeom(allPositions.slice(0, closestIdx + 1)) : null;
+
     const waypointPositions = waypoints.slice(1, -1).map(({ lat, lon, alt }) =>
       latLngToVec3(lat, lon, RADIUS + altToLift(alt ?? 0))
     );
 
-    return { tubeGeom, flownLineGeom, waypointPositions };
+    return { unflownGeom, flownGeom, waypointPositions };
   }, [waypoints, flight.lat, flight.lon]);
 
-  if (!tubeGeom) return null;
+  if (!unflownGeom) return null;
 
   return (
     <group>
-      {/* Full route — faint tube */}
-      <mesh geometry={tubeGeom}>
-        <meshBasicMaterial color={routeColor} transparent opacity={0.2} depthWrite={false} />
-      </mesh>
-      {/* Flown portion — bright line */}
-      {flownLineGeom && (
-        <line geometry={flownLineGeom}>
-          <lineBasicMaterial color={routeColor} transparent opacity={0.9} depthWrite={false} />
+      {/* Unflown route — faint dashed-style line */}
+      <line geometry={unflownGeom}>
+        <lineBasicMaterial color={routeColor} transparent opacity={0.35} depthWrite={false} />
+      </line>
+      {/* Flown portion — solid, brighter */}
+      {flownGeom && (
+        <line geometry={flownGeom}>
+          <lineBasicMaterial color={routeColor} transparent opacity={0.75} depthWrite={false} />
         </line>
       )}
-      {/* Waypoint dots */}
+      {/* Waypoint ticks — tiny dots */}
       {waypointPositions?.map((pos, i) => (
         <mesh key={i} position={pos}>
-          <sphereGeometry args={[waypointDotRadius, 6, 6]} />
-          <meshBasicMaterial color={routeColor} transparent opacity={0.6} />
+          <sphereGeometry args={[waypointDotRadius, 5, 5]} />
+          <meshBasicMaterial color={routeColor} transparent opacity={0.5} depthWrite={false} />
         </mesh>
       ))}
     </group>
@@ -179,13 +218,13 @@ function makeLabelTexture(name) {
   canvas.height = 64;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, 256, 64);
-  ctx.font = 'bold 22px Arial, sans-serif';
+  ctx.font = '500 18px Inter, system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
   ctx.lineWidth = 4;
   ctx.strokeText(name, 128, 32);
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
   ctx.fillText(name, 128, 32);
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
@@ -236,7 +275,7 @@ function CountryBorders({ geojson }) {
 
   return (
     <lineSegments geometry={geometry}>
-      <lineBasicMaterial color="#ffffff" transparent opacity={0.25} depthWrite={false} />
+      <lineBasicMaterial color="#c8d8e8" transparent opacity={0.18} depthWrite={false} />
     </lineSegments>
   );
 }
@@ -259,13 +298,13 @@ function makeCityLabelTexture(name) {
   canvas.height = 48;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, 256, 48);
-  ctx.font = '16px Arial, sans-serif';
+  ctx.font = '13px Inter, system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.9)';
   ctx.lineWidth = 3;
   ctx.strokeText(name, 128, 24);
-  ctx.fillStyle = 'rgba(220,220,220,0.95)';
+  ctx.fillStyle = 'rgba(200,210,220,0.95)';
   ctx.fillText(name, 128, 24);
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
@@ -394,7 +433,7 @@ function AtcOverlay({ controllers, boundaries }) {
     <>
       {sectorGeometry && (
         <lineSegments geometry={sectorGeometry}>
-          <lineBasicMaterial color="#00eeff" transparent opacity={0.85} depthWrite={false} />
+          <lineBasicMaterial color="#40c8e0" transparent opacity={0.55} depthWrite={false} />
         </lineSegments>
       )}
       {firLabels.map(({ id, lat, lng }) => (
@@ -522,21 +561,36 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
 function FlightMarker({ flight, onClick }) {
   const [hovered, setHovered] = useState(false);
   const camDist = useContext(CamDistContext);
-  const scale = camDist / 5;
-  const baseRadius = 0.012 * scale;
+  const scale = (camDist / 5) * (hovered ? 0.022 : 0.018);
   const lift = altToLift(flight.altitude);
-  const pos = latLngToVec3(flight.lat, flight.lon, RADIUS + lift + baseRadius);
-  const color = flight.color ?? '#f0cb00';
+  const pos = latLngToVec3(flight.lat, flight.lon, RADIUS + lift + 0.001);
+  const color = flight.color ?? '#e8f0ff';
+
+  // Orient the plane flat on the globe surface, nose pointing along heading
+  const quaternion = useMemo(() => {
+    const normal = pos.clone().normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
+    // Align flat to surface
+    const surfaceMatrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0, 0, 0), safeUp);
+    const q = new THREE.Quaternion().setFromRotationMatrix(surfaceMatrix);
+    // Rotate around surface normal by heading
+    const headingRad = ((flight.heading ?? 0) * Math.PI) / 180;
+    const headingQ = new THREE.Quaternion().setFromAxisAngle(normal, -headingRad);
+    return headingQ.multiply(q);
+  }, [pos, flight.heading]);
 
   return (
     <mesh
       position={pos}
+      quaternion={quaternion}
+      scale={[scale, scale, scale]}
       onClick={(e) => { e.stopPropagation(); onClick(flight, e.nativeEvent ?? e); }}
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
     >
-      <sphereGeometry args={[hovered ? baseRadius * 1.4 : baseRadius, 8, 8]} />
-      <meshBasicMaterial color={color} />
+      <shapeGeometry args={[PLANE_SHAPE]} />
+      <meshBasicMaterial color={color} side={THREE.DoubleSide} />
     </mesh>
   );
 }
