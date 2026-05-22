@@ -437,8 +437,6 @@ const CITY_RANK_THRESHOLDS = [
   { maxRank: 8, showBelow: 2.6 },
 ];
 
-const BORDER_MID_THRESHOLD = 3.8;
-const BORDER_HIGH_THRESHOLD = 3.2;
 
 function getLabelOpacity(camDist) {
   if (camDist >= LABEL_FADE_START) return 1;
@@ -478,12 +476,8 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
   const camDist = useContext(CamDistContext);
   const labelOpacity = getLabelOpacity(camDist);
 
-  // Pick highest-detail available geojson for current zoom
-  const activeBorderGeojson = (() => {
-    if (camDist < BORDER_HIGH_THRESHOLD && geojson10m) return geojson10m;
-    if (camDist < BORDER_MID_THRESHOLD && geojson110m) return geojson110m;
-    return geojson;
-  })();
+  // Always use highest-detail available — fall back to lower while 10m is loading
+  const activeBorderGeojson = geojson10m ?? geojson110m ?? geojson;
 
   return (
     <group ref={meshRef}>
@@ -544,7 +538,6 @@ export function Globe({ flights, controllers, onFlightClick }) {
   const [geojson, setGeojson] = useState(null);
   const [geojson110m, setGeojson110m] = useState(null);
   const [geojson10m, setGeojson10m] = useState(null);
-  const geojson10mLoadedRef = useRef(false);
   const [cities, setCities] = useState([]);
   const citiesLoadedRef = useRef(false);
   const [boundaries, setBoundaries] = useState(null);
@@ -560,17 +553,14 @@ export function Globe({ flights, controllers, onFlightClick }) {
       .then((r) => r.json())
       .then(setGeojson110m)
       .catch(console.error);
+    fetch('/countries-10m.geojson')
+      .then((r) => r.json())
+      .then(setGeojson10m)
+      .catch(console.error);
   }, []);
 
-  // Lazy-load 10m borders + cities when the user first zooms in
+  // Lazy-load cities when the user first zooms in
   useEffect(() => {
-    if (camDist < BORDER_HIGH_THRESHOLD + 0.3 && !geojson10mLoadedRef.current) {
-      geojson10mLoadedRef.current = true;
-      fetch('/countries-10m.geojson')
-        .then((r) => r.json())
-        .then(setGeojson10m)
-        .catch(console.error);
-    }
     if (camDist < CITY_RANK_THRESHOLDS[0].showBelow + 0.3 && !citiesLoadedRef.current) {
       citiesLoadedRef.current = true;
       fetch('/cities.geojson')
