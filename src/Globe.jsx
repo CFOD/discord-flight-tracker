@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { TextureLoader } from 'three';
 
 const EARTH_TEXTURE = '/textures/earth-blue-marble.jpg';
-const BUMP_TEXTURE = '/textures/earth-topology.png';
+const BUMP_TEXTURE = '/textures/earth-topology.jpg';
 const RADIUS = 2;
 const BORDER_RADIUS = RADIUS + 0.003;
 const LABEL_RADIUS = RADIUS + 0.012;
@@ -307,7 +307,7 @@ function AtcOverlay({ controllers, boundaries }) {
 function Atmosphere() {
   return (
     <mesh>
-      <sphereGeometry args={[RADIUS * 1.02, 64, 64]} />
+      <sphereGeometry args={[RADIUS * 1.02, 128, 128]} />
       <shaderMaterial
         side={THREE.BackSide}
         transparent
@@ -344,6 +344,10 @@ function EarthMesh({ flights, onFlightClick, geojson, controllers, boundaries, r
   const meshRef = useRef();
   const [colorMap, bumpMap] = useLoader(TextureLoader, [EARTH_TEXTURE, BUMP_TEXTURE]);
 
+  colorMap.colorSpace = THREE.SRGBColorSpace;
+  colorMap.anisotropy = 16;
+  bumpMap.anisotropy = 16;
+
   useFrame((_, delta) => {
     if (meshRef.current && rotating) meshRef.current.rotation.y += delta * 0.05;
   });
@@ -351,7 +355,7 @@ function EarthMesh({ flights, onFlightClick, geojson, controllers, boundaries, r
   return (
     <group ref={meshRef}>
       <mesh>
-        <sphereGeometry args={[RADIUS, 64, 64]} />
+        <sphereGeometry args={[RADIUS, 128, 128]} />
         <meshStandardMaterial map={colorMap} bumpMap={bumpMap} bumpScale={0.02} roughness={0.3} metalness={0.05} />
       </mesh>
       <Atmosphere />
