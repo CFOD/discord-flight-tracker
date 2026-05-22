@@ -11,5 +11,8 @@ function getSdk() {
 
 export async function setupDiscord() {
   const sdk = getSdk();
-  await sdk.ready();
+  await Promise.race([
+    sdk.ready(),
+    new Promise((resolve) => setTimeout(resolve, 3000)),
+  ]);
 }
