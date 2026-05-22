@@ -12,7 +12,14 @@ const RADIUS = 2;
 const BORDER_RADIUS = RADIUS + 0.003;
 const LABEL_RADIUS = RADIUS + 0.012;
 const ATC_RADIUS = RADIUS + 0.006;
+// MAX_CRUISE_LIFT corresponds to ~40,000 ft above surface on the globe
+const MAX_CRUISE_ALT_FT = 40000;
 const MAX_CRUISE_LIFT = 0.04;
+
+function altToLift(altFt) {
+  if (!altFt || altFt <= 0) return 0;
+  return Math.min(altFt / MAX_CRUISE_ALT_FT, 1) * MAX_CRUISE_LIFT;
+}
 
 const BOUNDARIES_URL = '/boundaries.geojson';
 
@@ -30,35 +37,35 @@ function latLngToVec3(lat, lng, radius) {
   );
 }
 
-// Realistic flight altitude profile: quick climb, long cruise, quick descent.
+// Fallback profile when waypoints have no altitude data.
 // t = 0..1 along route. Returns 0..1 lift factor.
 function flightProfile(t) {
-  const climbEnd = 0.12;
-  const descentStart = 0.82;
-  if (t < climbEnd) {
-    // Steep climb — use power curve so it rises quickly
-    return Math.pow(t / climbEnd, 0.5);
-  } else if (t > descentStart) {
-    // Descent back to surface
-    return Math.pow(1 - (t - descentStart) / (1 - descentStart), 0.5);
-  }
-  return 1.0; // cruise
+  const climbEnd = 0.15;
+  const descentStart = 0.85;
+  if (t < climbEnd) return Math.pow(t / climbEnd, 0.5);
+  if (t > descentStart) return Math.pow(1 - (t - descentStart) / (1 - descentStart), 0.5);
+  return 1.0;
 }
 
 function buildRoutePoints(waypoints) {
   if (!waypoints || waypoints.length < 2) return null;
 
-  const points = [];
+  const hasAltData = waypoints.some((w) => w.alt != null && w.alt > 0);
   const n = waypoints.length;
+  const points = [];
 
   for (let i = 0; i < n; i++) {
-    const t = i / (n - 1);
-    const lift = flightProfile(t) * MAX_CRUISE_LIFT;
-    const { lat, lon } = waypoints[i];
+    const { lat, lon, alt } = waypoints[i];
+    let lift;
+    if (hasAltData) {
+      // Use real altitude — null/0 entries (origin, dest) interpolate via CatmullRom naturally
+      lift = altToLift(alt ?? 0);
+    } else {
+      lift = flightProfile(i / (n - 1)) * MAX_CRUISE_LIFT;
+    }
     points.push(latLngToVec3(lat, lon, RADIUS + lift));
   }
 
-  // CatmullRom through the points for a smooth tube
   return new THREE.CatmullRomCurve3(points);
 }
 
@@ -67,8 +74,9 @@ function FlightRoute({ flight }) {
   const routeColor = color ?? '#f0cb00';
   const camDist = useContext(CamDistContext);
   const tubeRadius = 0.0015 * (camDist / 5);
+  const waypointDotRadius = 0.004 * (camDist / 5);
 
-  const { tubeGeom, flownLineGeom } = useMemo(() => {
+  const { tubeGeom, flownLineGeom, waypointPositions } = useMemo(() => {
     const curve = buildRoutePoints(waypoints);
     if (!curve) return {};
 
@@ -85,7 +93,6 @@ function FlightRoute({ flight }) {
       if (d < closestDist) { closestDist = d; closestIdx = i; }
     });
 
-    // Flown portion as a simple line (avoids CatmullRom re-interpolation distortion)
     let flownLineGeom = null;
     if (closestIdx >= 1) {
       const flownPositions = new Float32Array(
@@ -95,7 +102,12 @@ function FlightRoute({ flight }) {
       flownLineGeom.setAttribute('position', new THREE.BufferAttribute(flownPositions, 3));
     }
 
-    return { tubeGeom, flownLineGeom };
+    // Waypoint positions (skip first/last — those are origin/dest airports)
+    const waypointPositions = waypoints.slice(1, -1).map(({ lat, lon, alt }) =>
+      latLngToVec3(lat, lon, RADIUS + altToLift(alt ?? 0))
+    );
+
+    return { tubeGeom, flownLineGeom, waypointPositions };
   }, [waypoints, flight.lat, flight.lon]);
 
   if (!tubeGeom) return null;
@@ -112,6 +124,13 @@ function FlightRoute({ flight }) {
           <lineBasicMaterial color={routeColor} transparent opacity={0.9} depthWrite={false} />
         </line>
       )}
+      {/* Waypoint dots */}
+      {waypointPositions?.map((pos, i) => (
+        <mesh key={i} position={pos}>
+          <sphereGeometry args={[waypointDotRadius, 6, 6]} />
+          <meshBasicMaterial color={routeColor} transparent opacity={0.6} />
+        </mesh>
+      ))}
     </group>
   );
 }
@@ -503,9 +522,10 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
 function FlightMarker({ flight, onClick }) {
   const [hovered, setHovered] = useState(false);
   const camDist = useContext(CamDistContext);
-  const scale = camDist / 5; // 1.0 at default distance, shrinks when zoomed in
+  const scale = camDist / 5;
   const baseRadius = 0.012 * scale;
-  const pos = latLngToVec3(flight.lat, flight.lon, RADIUS + 0.005 + baseRadius);
+  const lift = altToLift(flight.altitude);
+  const pos = latLngToVec3(flight.lat, flight.lon, RADIUS + lift + baseRadius);
   const color = flight.color ?? '#f0cb00';
 
   return (
