@@ -1,12 +1,13 @@
 import { useRef, useState, Suspense, useEffect, useMemo, createContext, useContext } from 'react';
-import { Canvas, useFrame, useLoader } from '@react-three/fiber';
+import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 
 const CamDistContext = createContext(5);
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
 
-const EARTH_TEXTURE = '/textures/earth-blue-marble.jpg';
+const EARTH_TEXTURE_4K = '/textures/earth-blue-marble.jpg';
+const EARTH_TEXTURE_8K = '/textures/earth-8k.jpg';
 const BUMP_TEXTURE = '/textures/earth-topology.jpg';
 const RADIUS = 2;
 const BORDER_RADIUS = RADIUS + 0.003;
@@ -108,6 +109,34 @@ function buildPlaneShape() {
 
 const PLANE_SHAPE = buildPlaneShape();
 
+const _waypointDotGeom = new THREE.SphereGeometry(1, 4, 4);
+const _waypointDotMat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false });
+const _mat4 = new THREE.Matrix4();
+
+function WaypointDots({ positions, color, radius }) {
+  const meshRef = useRef();
+
+  useMemo(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const c = new THREE.Color(color);
+    positions.forEach((pos, i) => {
+      _mat4.makeScale(radius, radius, radius);
+      _mat4.setPosition(pos);
+      mesh.setMatrixAt(i, _mat4);
+      mesh.setColorAt(i, c);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  });
+
+  return (
+    <instancedMesh ref={meshRef} args={[_waypointDotGeom, _waypointDotMat, positions.length]}>
+      <meshBasicMaterial color={color} transparent opacity={0.5} depthWrite={false} />
+    </instancedMesh>
+  );
+}
+
 function FlightRoute({ flight }) {
   const { waypoints, color } = flight;
   const routeColor = softenColor(color);
@@ -163,13 +192,10 @@ function FlightRoute({ flight }) {
           <lineBasicMaterial color={routeColor} transparent opacity={0.75} depthWrite={false} />
         </line>
       )}
-      {/* Waypoint ticks — tiny dots */}
-      {waypointPositions?.map((pos, i) => (
-        <mesh key={i} position={pos}>
-          <sphereGeometry args={[waypointDotRadius, 5, 5]} />
-          <meshBasicMaterial color={routeColor} transparent opacity={0.5} depthWrite={false} />
-        </mesh>
-      ))}
+      {/* Waypoint dots — single instanced mesh */}
+      {waypointPositions?.length > 0 && (
+        <WaypointDots positions={waypointPositions} color={routeColor} radius={waypointDotRadius} />
+      )}
     </group>
   );
 }
@@ -521,11 +547,14 @@ function getCityOpacity(camDist, rank) {
 
 function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, cities, controllers, boundaries, rotating }) {
   const meshRef = useRef();
-  const [colorMap, bumpMap] = useLoader(TextureLoader, [EARTH_TEXTURE, BUMP_TEXTURE]);
+  const { gl } = useThree();
+  const maxTexSize = gl.capabilities.maxTextureSize;
+  const earthTexture = maxTexSize >= 8192 ? EARTH_TEXTURE_8K : EARTH_TEXTURE_4K;
+  const [colorMap, bumpMap] = useLoader(TextureLoader, [earthTexture, BUMP_TEXTURE]);
 
   colorMap.colorSpace = THREE.SRGBColorSpace;
-  colorMap.anisotropy = 16;
-  bumpMap.anisotropy = 16;
+  colorMap.anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
+  bumpMap.anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
 
   useFrame((_, delta) => {
     if (meshRef.current && rotating) meshRef.current.rotation.y += delta * 0.05;
@@ -534,8 +563,10 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
   const camDist = useContext(CamDistContext);
   const labelOpacity = getLabelOpacity(camDist);
 
-  // Always use highest-detail available — fall back to lower while 10m is loading
-  const activeBorderGeojson = geojson10m ?? geojson110m ?? geojson;
+  // Use 10m only when zoomed in and loaded, otherwise 110m, fallback to base
+  const activeBorderGeojson = (camDist < BORDER_HIGH_THRESHOLD && geojson10m)
+    ? geojson10m
+    : geojson110m ?? geojson;
 
   return (
     <group ref={meshRef}>
@@ -608,10 +639,13 @@ function CameraTracker({ onUpdate }) {
   return null;
 }
 
+const BORDER_HIGH_THRESHOLD = 3.2;
+
 export function Globe({ flights, controllers, onFlightClick }) {
   const [geojson, setGeojson] = useState(null);
   const [geojson110m, setGeojson110m] = useState(null);
   const [geojson10m, setGeojson10m] = useState(null);
+  const geojson10mLoadedRef = useRef(false);
   const [cities, setCities] = useState([]);
   const citiesLoadedRef = useRef(false);
   const [boundaries, setBoundaries] = useState(null);
@@ -627,14 +661,17 @@ export function Globe({ flights, controllers, onFlightClick }) {
       .then((r) => r.json())
       .then(setGeojson110m)
       .catch(console.error);
-    fetch('/countries-10m.geojson')
-      .then((r) => r.json())
-      .then(setGeojson10m)
-      .catch(console.error);
   }, []);
 
-  // Lazy-load cities when the user first zooms in
+  // Lazy-load 10m borders + cities only when the user zooms in
   useEffect(() => {
+    if (camDist < BORDER_HIGH_THRESHOLD + 0.3 && !geojson10mLoadedRef.current) {
+      geojson10mLoadedRef.current = true;
+      fetch('/countries-10m.geojson')
+        .then((r) => r.json())
+        .then(setGeojson10m)
+        .catch(console.error);
+    }
     if (camDist < CITY_RANK_THRESHOLDS[0].showBelow + 0.3 && !citiesLoadedRef.current) {
       citiesLoadedRef.current = true;
       fetch('/cities.geojson')
@@ -671,10 +708,8 @@ export function Globe({ flights, controllers, onFlightClick }) {
       onWheel={() => setRotating(false)}
     >
       <CamDistContext.Provider value={camDist}>
-        <ambientLight intensity={4.0} />
-        <pointLight position={[10, 10, 10]} intensity={3.0} />
-        <pointLight position={[-10, -10, -10]} intensity={1.5} />
-        <pointLight position={[0, 10, -10]} intensity={1.5} />
+        <ambientLight intensity={3.5} />
+        <pointLight position={[10, 10, 10]} intensity={2.5} />
         <Suspense fallback={null}>
           <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} geojson110m={geojson110m} geojson10m={geojson10m} cities={cities} controllers={controllers} boundaries={boundaries} rotating={rotating} />
         </Suspense>
