@@ -472,7 +472,7 @@ function AtcOverlay({ controllers, boundaries }) {
 function Atmosphere() {
   return (
     <mesh>
-      <sphereGeometry args={[RADIUS * 1.02, 64, 64]} />
+      <sphereGeometry args={[RADIUS * 1.02, 128, 128]} />
       <shaderMaterial
         side={THREE.BackSide}
         transparent
@@ -550,10 +550,11 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
   const { gl } = useThree();
   const maxTexSize = gl.capabilities.maxTextureSize;
   const earthTexture = maxTexSize >= 8192 ? EARTH_TEXTURE_8K : EARTH_TEXTURE_4K;
-  const [colorMap] = useLoader(TextureLoader, [earthTexture]);
+  const [colorMap, bumpMap] = useLoader(TextureLoader, [earthTexture, BUMP_TEXTURE]);
 
   colorMap.colorSpace = THREE.SRGBColorSpace;
   colorMap.anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
+  bumpMap.anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
 
   useFrame((_, delta) => {
     if (meshRef.current && rotating) meshRef.current.rotation.y += delta * 0.05;
@@ -570,8 +571,8 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
   return (
     <group ref={meshRef}>
       <mesh>
-        <sphereGeometry args={[RADIUS, 64, 64]} />
-        <meshBasicMaterial map={colorMap} />
+        <sphereGeometry args={[RADIUS, 128, 128]} />
+        <meshStandardMaterial map={colorMap} bumpMap={bumpMap} bumpScale={0.02} roughness={0.3} metalness={0.05} />
       </mesh>
       <Atmosphere />
       {activeBorderGeojson && <CountryBorders geojson={activeBorderGeojson} />}
@@ -702,11 +703,13 @@ export function Globe({ flights, controllers, onFlightClick }) {
     <Canvas
       camera={{ position: [0, 0, 5], fov: 45 }}
       style={{ width: '100%', height: '100%' }}
-      gl={{ antialias: false, alpha: true, powerPreference: 'high-performance' }}
+      gl={{ antialias: true, alpha: true }}
       onPointerDown={() => setRotating(false)}
       onWheel={() => setRotating(false)}
     >
       <CamDistContext.Provider value={camDist}>
+        <ambientLight intensity={3.5} />
+        <pointLight position={[10, 10, 10]} intensity={2.5} />
         <Suspense fallback={null}>
           <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} geojson110m={geojson110m} geojson10m={geojson10m} cities={cities} controllers={controllers} boundaries={boundaries} rotating={rotating} />
         </Suspense>
