@@ -234,6 +234,71 @@ function CountryLabels({ geojson, opacity = 1 }) {
   );
 }
 
+function makeCityLabelTexture(name) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 48;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 256, 48);
+  ctx.font = '16px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+  ctx.lineWidth = 3;
+  ctx.strokeText(name, 128, 24);
+  ctx.fillStyle = 'rgba(220,220,220,0.95)';
+  ctx.fillText(name, 128, 24);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function CityLabel({ name, lat, lng, opacity }) {
+  const camDist = useContext(CamDistContext);
+  const scale = (camDist / 5) * 0.6;
+  const texture = useMemo(() => makeCityLabelTexture(name), [name]);
+  const pos = useMemo(() => latLngToVec3(lat, lng, LABEL_RADIUS), [lat, lng]);
+
+  const quaternion = useMemo(() => {
+    const normal = pos.clone().normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
+    const matrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0, 0, 0), safeUp);
+    return new THREE.Quaternion().setFromRotationMatrix(matrix);
+  }, [pos]);
+
+  if (opacity <= 0) return null;
+
+  return (
+    <mesh position={pos} quaternion={quaternion} scale={[scale, scale, 1]}>
+      <planeGeometry args={[0.28, 0.053]} />
+      <meshBasicMaterial map={texture} transparent opacity={opacity} depthWrite={false} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
+function CityLabels({ cities }) {
+  const camDist = useContext(CamDistContext);
+  const maxRank = getCityMaxRank(camDist);
+  if (maxRank < 0) return null;
+
+  return (
+    <>
+      {cities
+        .filter((c) => c.scalerank <= maxRank)
+        .map((c) => (
+          <CityLabel
+            key={c.name + c.lat + c.lng}
+            name={c.name}
+            lat={c.lat}
+            lng={c.lng}
+            opacity={getCityOpacity(camDist, c.scalerank)}
+          />
+        ))}
+    </>
+  );
+}
+
 function buildAtcSectorLines(boundaries, activeFirIds) {
   const points = [];
   for (const feature of boundaries.features) {
@@ -357,12 +422,23 @@ function Atmosphere() {
 }
 
 // LOD thresholds (camDist): 5 = fully zoomed out, 2.5 = closest
-// Labels visible and fully opaque when zoomed out; fade and disappear when zooming in
-// Border detail switches: low (countries.geojson) → mid (110m) → high (10m)
-const LABEL_FADE_START = 4.0;  // start fading labels
-const LABEL_FADE_END = 3.2;    // labels fully gone
-const BORDER_MID_THRESHOLD = 3.8;   // switch to 110m borders
-const BORDER_HIGH_THRESHOLD = 3.2;  // switch to 10m borders
+const LABEL_FADE_START = 4.0;   // country labels start fading
+const LABEL_FADE_END = 3.2;     // country labels fully gone
+
+// City labels: appear as country labels disappear, more cities revealed closer in
+// scalerank 0-2 (capitals + megacities) show from camDist < 3.8
+// scalerank 3-4 (large cities) show from camDist < 3.3
+// scalerank 5-6 (medium cities) show from camDist < 2.9
+// scalerank 7-8 (smaller cities) show from camDist < 2.6
+const CITY_RANK_THRESHOLDS = [
+  { maxRank: 2, showBelow: 3.8 },
+  { maxRank: 4, showBelow: 3.3 },
+  { maxRank: 6, showBelow: 2.9 },
+  { maxRank: 8, showBelow: 2.6 },
+];
+
+const BORDER_MID_THRESHOLD = 3.8;
+const BORDER_HIGH_THRESHOLD = 3.2;
 
 function getLabelOpacity(camDist) {
   if (camDist >= LABEL_FADE_START) return 1;
@@ -370,7 +446,24 @@ function getLabelOpacity(camDist) {
   return (camDist - LABEL_FADE_END) / (LABEL_FADE_START - LABEL_FADE_END);
 }
 
-function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, controllers, boundaries, rotating }) {
+function getCityMaxRank(camDist) {
+  for (const { maxRank, showBelow } of CITY_RANK_THRESHOLDS) {
+    if (camDist < showBelow) return maxRank;
+  }
+  return -1; // no cities shown
+}
+
+function getCityOpacity(camDist, rank) {
+  // Find the threshold band this rank belongs to
+  const band = CITY_RANK_THRESHOLDS.find((t) => rank <= t.maxRank);
+  if (!band || camDist >= band.showBelow) return 0;
+  // Fade in over 0.2 units below the threshold
+  const fadeRange = 0.2;
+  if (camDist < band.showBelow - fadeRange) return 1;
+  return (band.showBelow - camDist) / fadeRange;
+}
+
+function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, cities, controllers, boundaries, rotating }) {
   const meshRef = useRef();
   const [colorMap, bumpMap] = useLoader(TextureLoader, [EARTH_TEXTURE, BUMP_TEXTURE]);
 
@@ -401,6 +494,7 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
       <Atmosphere />
       {activeBorderGeojson && <CountryBorders geojson={activeBorderGeojson} />}
       {geojson && labelOpacity > 0 && <CountryLabels geojson={geojson} opacity={labelOpacity} />}
+      {cities.length > 0 && <CityLabels cities={cities} />}
       {controllers.length > 0 && <AtcOverlay controllers={controllers} boundaries={boundaries} />}
       {flights.map((flight) => (
         <group key={flight.discordId}>
@@ -451,6 +545,8 @@ export function Globe({ flights, controllers, onFlightClick }) {
   const [geojson110m, setGeojson110m] = useState(null);
   const [geojson10m, setGeojson10m] = useState(null);
   const geojson10mLoadedRef = useRef(false);
+  const [cities, setCities] = useState([]);
+  const citiesLoadedRef = useRef(false);
   const [boundaries, setBoundaries] = useState(null);
   const [camDist, setCamDist] = useState(5);
   const [rotating, setRotating] = useState(true);
@@ -466,13 +562,28 @@ export function Globe({ flights, controllers, onFlightClick }) {
       .catch(console.error);
   }, []);
 
-  // Lazy-load 10m detail only when the user zooms in close
+  // Lazy-load 10m borders + cities when the user first zooms in
   useEffect(() => {
     if (camDist < BORDER_HIGH_THRESHOLD + 0.3 && !geojson10mLoadedRef.current) {
       geojson10mLoadedRef.current = true;
       fetch('/countries-10m.geojson')
         .then((r) => r.json())
         .then(setGeojson10m)
+        .catch(console.error);
+    }
+    if (camDist < CITY_RANK_THRESHOLDS[0].showBelow + 0.3 && !citiesLoadedRef.current) {
+      citiesLoadedRef.current = true;
+      fetch('/cities.geojson')
+        .then((r) => r.json())
+        .then((data) => {
+          const parsed = data.features.map((f) => ({
+            name: f.properties.name,
+            scalerank: f.properties.scalerank,
+            lat: f.geometry.coordinates[1],
+            lng: f.geometry.coordinates[0],
+          }));
+          setCities(parsed);
+        })
         .catch(console.error);
     }
   }, [camDist]);
@@ -501,7 +612,7 @@ export function Globe({ flights, controllers, onFlightClick }) {
         <pointLight position={[-10, -10, -10]} intensity={1.5} />
         <pointLight position={[0, 10, -10]} intensity={1.5} />
         <Suspense fallback={null}>
-          <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} geojson110m={geojson110m} geojson10m={geojson10m} controllers={controllers} boundaries={boundaries} rotating={rotating} />
+          <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} geojson110m={geojson110m} geojson10m={geojson10m} cities={cities} controllers={controllers} boundaries={boundaries} rotating={rotating} />
         </Suspense>
         <CameraTracker onUpdate={setCamDist} />
         <OrbitControls
