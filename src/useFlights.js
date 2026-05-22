@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 
 const WS_URL = import.meta.env.DEV
   ? 'ws://localhost:3001/ws'
-  : 'wss://flightmap.cfod.co.uk/ws';
+  : location.host.includes('discordsays.com') || location.host.includes('workers.dev')
+    ? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/.proxy/ws`
+    : 'wss://flightmap.cfod.co.uk/ws';
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
 
