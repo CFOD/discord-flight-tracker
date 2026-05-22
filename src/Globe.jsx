@@ -140,13 +140,17 @@ function geojsonToLineSegments(features, radius) {
   return new Float32Array(allPoints);
 }
 
+function getFeatureName(properties) {
+  return properties.name ?? properties.NAME ?? properties.ADMIN ?? '';
+}
+
 function countryCentroids(features) {
   return features.map((f) => {
     const { type, coordinates } = f.geometry;
     const ring = type === 'Polygon' ? coordinates[0] : coordinates[0][0];
     let sumLng = 0, sumLat = 0;
     for (const [lng, lat] of ring) { sumLng += lng; sumLat += lat; }
-    return { name: f.properties.name, lat: sumLat / ring.length, lng: sumLng / ring.length };
+    return { name: getFeatureName(f.properties), lat: sumLat / ring.length, lng: sumLng / ring.length };
   });
 }
 
@@ -169,7 +173,7 @@ function makeLabelTexture(name) {
   return tex;
 }
 
-function CountryLabel({ name, lat, lng }) {
+function CountryLabel({ name, lat, lng, opacity = 1 }) {
   const camDist = useContext(CamDistContext);
   const scale = camDist / 5;
   const texture = useMemo(() => makeLabelTexture(name), [name]);
@@ -183,10 +187,12 @@ function CountryLabel({ name, lat, lng }) {
     return new THREE.Quaternion().setFromRotationMatrix(matrix);
   }, [pos]);
 
+  if (opacity <= 0) return null;
+
   return (
     <mesh position={pos} quaternion={quaternion} scale={[scale, scale, 1]}>
       <planeGeometry args={[0.28, 0.07]} />
-      <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
+      <meshBasicMaterial map={texture} transparent opacity={opacity} depthWrite={false} side={THREE.DoubleSide} />
     </mesh>
   );
 }
@@ -206,13 +212,13 @@ function CountryBorders({ geojson }) {
   );
 }
 
-function CountryLabels({ geojson }) {
+function CountryLabels({ geojson, opacity = 1 }) {
   const centroids = useMemo(() => countryCentroids(geojson.features), [geojson]);
 
   return (
     <>
       {centroids.map(({ name, lat, lng }) => (
-        <CountryLabel key={name} name={name} lat={lat} lng={lng} />
+        <CountryLabel key={name} name={name} lat={lat} lng={lng} opacity={opacity} />
       ))}
     </>
   );
@@ -340,7 +346,21 @@ function Atmosphere() {
   );
 }
 
-function EarthMesh({ flights, onFlightClick, geojson, controllers, boundaries, rotating }) {
+// LOD thresholds (camDist): 5 = fully zoomed out, 2.5 = closest
+// Labels visible and fully opaque when zoomed out; fade and disappear when zooming in
+// Border detail switches: low (countries.geojson) → mid (110m) → high (10m)
+const LABEL_FADE_START = 4.0;  // start fading labels
+const LABEL_FADE_END = 3.2;    // labels fully gone
+const BORDER_MID_THRESHOLD = 3.8;   // switch to 110m borders
+const BORDER_HIGH_THRESHOLD = 3.2;  // switch to 10m borders
+
+function getLabelOpacity(camDist) {
+  if (camDist >= LABEL_FADE_START) return 1;
+  if (camDist <= LABEL_FADE_END) return 0;
+  return (camDist - LABEL_FADE_END) / (LABEL_FADE_START - LABEL_FADE_END);
+}
+
+function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, controllers, boundaries, rotating }) {
   const meshRef = useRef();
   const [colorMap, bumpMap] = useLoader(TextureLoader, [EARTH_TEXTURE, BUMP_TEXTURE]);
 
@@ -352,6 +372,16 @@ function EarthMesh({ flights, onFlightClick, geojson, controllers, boundaries, r
     if (meshRef.current && rotating) meshRef.current.rotation.y += delta * 0.05;
   });
 
+  const camDist = useContext(CamDistContext);
+  const labelOpacity = getLabelOpacity(camDist);
+
+  // Pick highest-detail available geojson for current zoom
+  const activeBorderGeojson = (() => {
+    if (camDist < BORDER_HIGH_THRESHOLD && geojson10m) return geojson10m;
+    if (camDist < BORDER_MID_THRESHOLD && geojson110m) return geojson110m;
+    return geojson;
+  })();
+
   return (
     <group ref={meshRef}>
       <mesh>
@@ -359,8 +389,8 @@ function EarthMesh({ flights, onFlightClick, geojson, controllers, boundaries, r
         <meshStandardMaterial map={colorMap} bumpMap={bumpMap} bumpScale={0.02} roughness={0.3} metalness={0.05} />
       </mesh>
       <Atmosphere />
-      {geojson && <CountryBorders geojson={geojson} />}
-      {geojson && <CountryLabels geojson={geojson} />}
+      {activeBorderGeojson && <CountryBorders geojson={activeBorderGeojson} />}
+      {geojson && labelOpacity > 0 && <CountryLabels geojson={geojson} opacity={labelOpacity} />}
       {controllers.length > 0 && <AtcOverlay controllers={controllers} boundaries={boundaries} />}
       {flights.map((flight) => (
         <group key={flight.discordId}>
@@ -408,6 +438,9 @@ function CameraTracker({ onUpdate }) {
 
 export function Globe({ flights, controllers, onFlightClick }) {
   const [geojson, setGeojson] = useState(null);
+  const [geojson110m, setGeojson110m] = useState(null);
+  const [geojson10m, setGeojson10m] = useState(null);
+  const geojson10mLoadedRef = useRef(false);
   const [boundaries, setBoundaries] = useState(null);
   const [camDist, setCamDist] = useState(5);
   const [rotating, setRotating] = useState(true);
@@ -417,7 +450,22 @@ export function Globe({ flights, controllers, onFlightClick }) {
       .then((r) => r.json())
       .then(setGeojson)
       .catch(console.error);
+    fetch('/countries-110m.geojson')
+      .then((r) => r.json())
+      .then(setGeojson110m)
+      .catch(console.error);
   }, []);
+
+  // Lazy-load 10m detail only when the user zooms in close
+  useEffect(() => {
+    if (camDist < BORDER_HIGH_THRESHOLD + 0.3 && !geojson10mLoadedRef.current) {
+      geojson10mLoadedRef.current = true;
+      fetch('/countries-10m.geojson')
+        .then((r) => r.json())
+        .then(setGeojson10m)
+        .catch(console.error);
+    }
+  }, [camDist]);
 
   useEffect(() => {
     fetch(BOUNDARIES_URL)
@@ -443,7 +491,7 @@ export function Globe({ flights, controllers, onFlightClick }) {
         <pointLight position={[-10, -10, -10]} intensity={1.5} />
         <pointLight position={[0, 10, -10]} intensity={1.5} />
         <Suspense fallback={null}>
-          <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} controllers={controllers} boundaries={boundaries} rotating={rotating} />
+          <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} geojson110m={geojson110m} geojson10m={geojson10m} controllers={controllers} boundaries={boundaries} rotating={rotating} />
         </Suspense>
         <CameraTracker onUpdate={setCamDist} />
         <OrbitControls
