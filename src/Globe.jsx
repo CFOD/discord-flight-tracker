@@ -320,8 +320,8 @@ function buildAtcSectorLines(boundaries, activeFirIds) {
 
 function AtcFirLabel({ id, lat, lng }) {
   const camDist = useContext(CamDistContext);
-  const scale = camDist / 5;
-  const texture = useMemo(() => makeLabelTexture(id), [id]);
+  const scale = (camDist / 5) * 0.6;
+  const texture = useMemo(() => makeCityLabelTexture(id), [id]);
   const pos = useMemo(() => latLngToVec3(lat, lng, LABEL_RADIUS), [lat, lng]);
   const quaternion = useMemo(() => {
     const normal = pos.clone().normalize();
@@ -333,7 +333,7 @@ function AtcFirLabel({ id, lat, lng }) {
 
   return (
     <mesh position={pos} quaternion={quaternion} scale={[scale, scale, 1]}>
-      <planeGeometry args={[0.28, 0.07]} />
+      <planeGeometry args={[0.28, 0.053]} />
       <meshBasicMaterial map={texture} transparent depthWrite={false} side={THREE.DoubleSide} />
     </mesh>
   );
