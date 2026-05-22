@@ -21,12 +21,16 @@ export function useFlights() {
 
     function connect() {
       if (destroyed) return;
+      console.log('[useFlights] connecting to', WS_URL);
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
+
+      ws.onopen = () => console.log('[useFlights] connected');
 
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
+          console.log('[useFlights] msg', msg.type, msg.flights?.length ?? msg.controllers?.length ?? msg.users?.length);
           if (msg.type === 'flights') {
             setFlights(msg.flights);
             retryDelay.current = RECONNECT_BASE_MS;
@@ -38,7 +42,8 @@ export function useFlights() {
         } catch (_) {}
       };
 
-      ws.onclose = () => {
+      ws.onclose = (e) => {
+        console.log('[useFlights] closed', e.code, e.reason);
         if (destroyed) return;
         timeoutRef.current = setTimeout(() => {
           retryDelay.current = Math.min(retryDelay.current * 2, RECONNECT_MAX_MS);
@@ -46,7 +51,7 @@ export function useFlights() {
         }, retryDelay.current);
       };
 
-      ws.onerror = () => ws.close();
+      ws.onerror = (e) => { console.log('[useFlights] error', e); ws.close(); };
     }
 
     connect();
