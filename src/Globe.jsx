@@ -228,13 +228,46 @@ function getFeatureName(properties) {
   return properties.name ?? properties.NAME ?? properties.ADMIN ?? '';
 }
 
+function ringArea(ring) {
+  // Shoelace formula for approximate polygon area
+  let area = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    area += (ring[j][0] + ring[i][0]) * (ring[j][1] - ring[i][1]);
+  }
+  return Math.abs(area / 2);
+}
+
+function ringCentroid(ring) {
+  // Area-weighted centroid via shoelace
+  let cx = 0, cy = 0, area = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const cross = ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+    cx += (ring[j][0] + ring[i][0]) * cross;
+    cy += (ring[j][1] + ring[i][1]) * cross;
+    area += cross;
+  }
+  area /= 2;
+  if (Math.abs(area) < 1e-10) {
+    // Degenerate — fall back to average
+    let sx = 0, sy = 0;
+    for (const [x, y] of ring) { sx += x; sy += y; }
+    return [sx / ring.length, sy / ring.length];
+  }
+  return [cx / (6 * area), cy / (6 * area)];
+}
+
 function countryCentroids(features) {
   return features.map((f) => {
     const { type, coordinates } = f.geometry;
-    const ring = type === 'Polygon' ? coordinates[0] : coordinates[0][0];
-    let sumLng = 0, sumLat = 0;
-    for (const [lng, lat] of ring) { sumLng += lng; sumLat += lat; }
-    return { name: getFeatureName(f.properties), lat: sumLat / ring.length, lng: sumLng / ring.length };
+    // For MultiPolygon, use the largest polygon's outer ring
+    const outerRings = type === 'Polygon'
+      ? [coordinates[0]]
+      : coordinates.map((poly) => poly[0]);
+    const largest = outerRings.reduce((best, ring) =>
+      ringArea(ring) > ringArea(best) ? ring : best
+    );
+    const [lng, lat] = ringCentroid(largest);
+    return { name: getFeatureName(f.properties), lat, lng };
   });
 }
 
@@ -363,22 +396,64 @@ function CityLabel({ name, lat, lng, opacity }) {
 
 function CityLabels({ cities }) {
   const camDist = useContext(CamDistContext);
+  const { camera } = useThree();
   const maxRank = getCityMaxRank(camDist);
   if (maxRank < 0) return null;
 
+  // Cull to the geometrically visible cap — the horizon angle for a sphere of
+  // RADIUS viewed from camDist. Adds a small margin so edge labels don't pop in.
+  const camDir = camera.position.clone().normalize();
+  const horizonDot = Math.sqrt(1 - (RADIUS / camDist) ** 2) - 0.05;
+  // Project to NDC, then greedily keep cities that don't overlap already-kept labels.
+  // Cities are pre-sorted by rank (most important first) so important ones win.
+  const _v3 = new THREE.Vector3();
+  const _proj = new THREE.Vector3();
+  // Label dimensions in NDC space — approximate based on text length
+  const labelH = 0.06;
+
+  const kept = [];
+  const occupied = []; // { cx, cy, hw, hh } in NDC
+
+  for (const c of cities) {
+    if (c.scalerank > maxRank) continue;
+    _v3.copy(latLngToVec3(c.lat, c.lng, 1).normalize());
+    if (_v3.dot(camDir) <= horizonDot) continue;
+
+    // Project world pos to NDC (-1..1)
+    _proj.copy(latLngToVec3(c.lat, c.lng, LABEL_RADIUS));
+    _proj.project(camera);
+
+    const cx = _proj.x;
+    const cy = _proj.y;
+    const hw = Math.min(0.04 + c.name.length * 0.012, 0.35); // half-width
+    const hh = labelH / 2;
+
+    // Check collision against all kept labels
+    let overlaps = false;
+    for (const o of occupied) {
+      if (Math.abs(cx - o.cx) < hw + o.hw && Math.abs(cy - o.cy) < hh + o.hh) {
+        overlaps = true;
+        break;
+      }
+    }
+    if (!overlaps) {
+      kept.push(c);
+      occupied.push({ cx, cy, hw, hh });
+    }
+  }
+  const visible = kept;
+
   return (
     <>
-      {cities
-        .filter((c) => c.scalerank <= maxRank)
-        .map((c) => (
-          <CityLabel
-            key={c.name + c.lat + c.lng}
-            name={c.name}
-            lat={c.lat}
-            lng={c.lng}
-            opacity={getCityOpacity(camDist, c.scalerank)}
-          />
-        ))}
+      {visible.map((c) => (
+        <CityLabel
+          key={c.name + c.lat + c.lng}
+          name={c.name}
+          lat={c.lat}
+          lng={c.lng}
+          opacity={getCityOpacity(camDist, c.scalerank)}
+        />
+      ))}
     </>
   );
 }
@@ -515,10 +590,12 @@ const LABEL_FADE_END = 3.2;     // country labels fully gone
 // scalerank 5-6 (medium cities) show from camDist < 2.9
 // scalerank 7-8 (smaller cities) show from camDist < 2.6
 const CITY_RANK_THRESHOLDS = [
-  { maxRank: 2, showBelow: 3.8 },
-  { maxRank: 4, showBelow: 3.3 },
-  { maxRank: 6, showBelow: 2.9 },
-  { maxRank: 8, showBelow: 2.6 },
+  { maxRank: 2, showBelow: 3.6 },  // 1M+ cities
+  { maxRank: 3, showBelow: 3.2 },  // 500k+
+  { maxRank: 4, showBelow: 2.95 }, // 100k+
+  { maxRank: 5, showBelow: 2.8 },  // 50k+
+  { maxRank: 6, showBelow: 2.65 }, // 20k+
+  { maxRank: 7, showBelow: 2.55 }, // all towns
 ];
 
 
@@ -529,20 +606,18 @@ function getLabelOpacity(camDist) {
 }
 
 function getCityMaxRank(camDist) {
+  // Return the highest rank whose threshold has been crossed
+  let max = -1;
   for (const { maxRank, showBelow } of CITY_RANK_THRESHOLDS) {
-    if (camDist < showBelow) return maxRank;
+    if (camDist < showBelow) max = maxRank;
   }
-  return -1; // no cities shown
+  return max;
 }
 
 function getCityOpacity(camDist, rank) {
-  // Find the threshold band this rank belongs to
   const band = CITY_RANK_THRESHOLDS.find((t) => rank <= t.maxRank);
   if (!band || camDist >= band.showBelow) return 0;
-  // Fade in over 0.2 units below the threshold
-  const fadeRange = 0.2;
-  if (camDist < band.showBelow - fadeRange) return 1;
-  return (band.showBelow - camDist) / fadeRange;
+  return 1;
 }
 
 function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, cities, controllers, boundaries, rotating }) {
@@ -674,14 +749,14 @@ export function Globe({ flights, controllers, onFlightClick }) {
     }
     if (camDist < CITY_RANK_THRESHOLDS[0].showBelow + 0.3 && !citiesLoadedRef.current) {
       citiesLoadedRef.current = true;
-      fetch('/cities.geojson')
+      fetch('/cities.json')
         .then((r) => r.json())
         .then((data) => {
-          const parsed = data.features.map((f) => ({
-            name: f.properties.name,
-            scalerank: f.properties.scalerank,
-            lat: f.geometry.coordinates[1],
-            lng: f.geometry.coordinates[0],
+          const parsed = data.map((c) => ({
+            name: c.n,
+            scalerank: c.r,
+            lat: c.la,
+            lng: c.lo,
           }));
           setCities(parsed);
         })
@@ -720,7 +795,8 @@ export function Globe({ flights, controllers, onFlightClick }) {
           minDistance={2.5}
           maxDistance={8}
           autoRotate={false}
-          dampingFactor={0.05}
+          rotateSpeed={0.75}
+          dampingFactor={0.08}
           enableDamping={true}
           makeDefault
         />
