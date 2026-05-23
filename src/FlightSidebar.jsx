@@ -152,6 +152,7 @@ function UserRow({ user, flight, onFlightClick }) {
 }
 
 export function FlightSidebar({ users, flights, onFlightClick }) {
+  const [collapsed, setCollapsed] = useState(false);
   const flightMap = Object.fromEntries(flights.map((f) => [f.discordId, f]));
   const online = users.filter((u) => flightMap[u.discordId]);
   const offline = users.filter((u) => !flightMap[u.discordId]);
@@ -164,12 +165,12 @@ export function FlightSidebar({ users, flights, onFlightClick }) {
       right: 16,
       width: 220,
       maxHeight: 'calc(100vh - 32px)',
-      overflowY: 'auto',
+      overflowY: collapsed ? 'hidden' : 'auto',
       background: 'rgba(8, 12, 24, 0.82)',
       backdropFilter: 'blur(8px)',
       border: '1px solid rgba(255,255,255,0.07)',
       borderRadius: 12,
-      padding: '12px 6px',
+      padding: collapsed ? '12px 6px' : '12px 6px',
       zIndex: 50,
       fontFamily: 'Inter, system-ui, sans-serif',
       scrollbarWidth: 'none',
@@ -181,17 +182,25 @@ export function FlightSidebar({ users, flights, onFlightClick }) {
         letterSpacing: '0.1em',
         fontWeight: 600,
         padding: '0 10px 8px',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
-        marginBottom: 6,
+        borderBottom: collapsed ? 'none' : '1px solid rgba(255,255,255,0.05)',
+        marginBottom: collapsed ? 0 : 6,
         display: 'flex',
         justifyContent: 'space-between',
-      }}>
+        alignItems: 'center',
+        cursor: 'pointer',
+        userSelect: 'none',
+      }} onClick={() => setCollapsed((v) => !v)}>
         <span>Pilots</span>
-        <span style={{ color: online.length > 0 ? '#3ddc84' : '#3a4a5a' }}>
-          {online.length} online
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: online.length > 0 ? '#3ddc84' : '#3a4a5a' }}>
+            {online.length} online
+          </span>
+          <span style={{ color: '#3a4a5a', fontSize: 12, lineHeight: 1 }}>
+            {collapsed ? '▾' : '▴'}
+          </span>
+        </div>
       </div>
-      {sorted.map((u) => (
+      {!collapsed && sorted.map((u) => (
         <UserRow
           key={u.discordId}
           user={u}

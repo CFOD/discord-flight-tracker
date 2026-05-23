@@ -716,6 +716,8 @@ function CameraTracker({ onUpdate }) {
 
 const BORDER_HIGH_THRESHOLD = 3.2;
 
+const isTouchDevice = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+
 export function Globe({ flights, controllers, onFlightClick }) {
   const [geojson, setGeojson] = useState(null);
   const [geojson110m, setGeojson110m] = useState(null);
@@ -795,7 +797,7 @@ export function Globe({ flights, controllers, onFlightClick }) {
           minDistance={2.5}
           maxDistance={8}
           autoRotate={false}
-          rotateSpeed={0.75}
+          rotateSpeed={isTouchDevice ? 0.25 : 0.75}
           dampingFactor={0.08}
           enableDamping={true}
           makeDefault
