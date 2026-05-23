@@ -10,7 +10,8 @@ function getSdk() {
 }
 
 function tokenUrl() {
-  return location.host.includes('discordsays.com') ? '/.proxy/api/token' : '/api/token';
+  if (import.meta.env.DEV) return 'http://localhost:3001/api/token';
+  return 'https://flightmap.cfod.co.uk/api/token';
 }
 
 export async function setupDiscord() {
