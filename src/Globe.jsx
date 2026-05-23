@@ -690,7 +690,7 @@ const WEATHER_RADIUS = RADIUS + 0.004;
 
 const RAINVIEWER_API = import.meta.env.DEV
   ? 'https://api.rainviewer.com/public/weather-maps.json'
-  : 'https://flightmap.cfod.co.uk/rainviewer/public/weather-maps.json';
+  : '/rainviewer/public/weather-maps.json';
 
 function useRainViewerUrl() {
   const [tileUrl, setTileUrl] = useState(null);
@@ -708,7 +708,7 @@ function useRainViewerUrl() {
           const path = `${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
           const url = import.meta.env.DEV
             ? `${data.host}${path}`
-            : `https://flightmap.cfod.co.uk/rainviewer-tiles${path}`;
+            : `/rainviewer-tiles${path}`;
           console.log('[weather] tile url template:', url);
           setTileUrl(url);
         }
