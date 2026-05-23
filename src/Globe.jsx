@@ -479,9 +479,26 @@ function buildAtcSectorLines(boundaries, activeFirIds) {
   return new Float32Array(points);
 }
 
+// Subdivide a spherical triangle so it hugs the globe surface.
+// Each edge midpoint is pushed to sphere radius r.
+function subdivideSphericalTri(a, b, c, r, depth, outPositions, outIndices) {
+  if (depth === 0) {
+    const base = outPositions.length / 3;
+    outPositions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    outIndices.push(base, base + 1, base + 2);
+    return;
+  }
+  const ab = a.clone().add(b).normalize().multiplyScalar(r);
+  const bc = b.clone().add(c).normalize().multiplyScalar(r);
+  const ca = c.clone().add(a).normalize().multiplyScalar(r);
+  subdivideSphericalTri(a, ab, ca, r, depth - 1, outPositions, outIndices);
+  subdivideSphericalTri(ab, b, bc, r, depth - 1, outPositions, outIndices);
+  subdivideSphericalTri(ca, bc, c, r, depth - 1, outPositions, outIndices);
+  subdivideSphericalTri(ab, bc, ca, r, depth - 1, outPositions, outIndices);
+}
+
 function buildAtcSectorFills(boundaries, activeFirIds) {
-  // Build one merged BufferGeometry of triangles for all active FIR polygons,
-  // projected onto the globe surface at ATC_RADIUS.
+  const { Earcut } = THREE;
   const positions = [];
   const indices = [];
 
@@ -494,21 +511,17 @@ function buildAtcSectorFills(boundaries, activeFirIds) {
       const outer = poly[0];
       if (!outer || outer.length < 3) continue;
 
-      // Fan triangulation from centroid — good enough for convex/near-convex FIR shapes
-      const base = positions.length / 3;
-      const cx = outer.reduce((s, p) => s + p[0], 0) / outer.length;
-      const cy = outer.reduce((s, p) => s + p[1], 0) / outer.length;
-      const center = latLngToVec3(cy, cx, ATC_RADIUS);
-      positions.push(center.x, center.y, center.z);
+      // Earcut needs flat 2D coords [x0,y0, x1,y1, ...]
+      const flat2d = outer.flatMap(([lng, lat]) => [lng, lat]);
+      const triIndices = Earcut.triangulate(flat2d, null, 2);
 
-      for (const [lng, lat] of outer) {
-        const v = latLngToVec3(lat, lng, ATC_RADIUS);
-        positions.push(v.x, v.y, v.z);
-      }
-
-      // centroid is at base, ring verts at base+1 .. base+outer.length
-      for (let i = 1; i < outer.length; i++) {
-        indices.push(base, base + i, base + (i % outer.length) + 1);
+      // For each triangle, project verts onto sphere and subdivide
+      for (let i = 0; i < triIndices.length; i += 3) {
+        const [ia, ib, ic] = [triIndices[i], triIndices[i + 1], triIndices[i + 2]];
+        const va = latLngToVec3(flat2d[ia * 2 + 1], flat2d[ia * 2], ATC_RADIUS);
+        const vb = latLngToVec3(flat2d[ib * 2 + 1], flat2d[ib * 2], ATC_RADIUS);
+        const vc = latLngToVec3(flat2d[ic * 2 + 1], flat2d[ic * 2], ATC_RADIUS);
+        subdivideSphericalTri(va, vb, vc, ATC_RADIUS, 2, positions, indices);
       }
     }
   }
