@@ -721,7 +721,18 @@ function useRainViewerUrl() {
   return tileUrl;
 }
 
-function buildWeatherTexture(tileUrl, onReady) {
+async function fetchTileAsBlob(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function buildWeatherTexture(tileUrl, onReady) {
   const ZOOM = 2;
   const TILES = Math.pow(2, ZOOM);
   const TILE_PX = 256;
@@ -732,23 +743,26 @@ function buildWeatherTexture(tileUrl, onReady) {
   canvas.height = SIZE;
   const ctx = canvas.getContext('2d');
 
-  let loaded = 0;
-  const total = TILES * TILES;
-
+  const tasks = [];
   for (let x = 0; x < TILES; x++) {
     for (let y = 0; y < TILES; y++) {
       const url = tileUrl.replace('{z}', ZOOM).replace('{x}', x).replace('{y}', y);
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        ctx.drawImage(img, x * TILE_PX, y * TILE_PX, TILE_PX, TILE_PX);
-        loaded++;
-        if (loaded === total) onReady(canvas);
-      };
-      img.onerror = () => { loaded++; if (loaded === total) onReady(canvas); };
-      img.src = url;
+      tasks.push({ x, y, url });
     }
   }
+
+  await Promise.all(tasks.map(async ({ x, y, url }) => {
+    const blobUrl = await fetchTileAsBlob(url);
+    if (!blobUrl) return;
+    await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => { ctx.drawImage(img, x * TILE_PX, y * TILE_PX, TILE_PX, TILE_PX); URL.revokeObjectURL(blobUrl); resolve(); };
+      img.onerror = () => { URL.revokeObjectURL(blobUrl); resolve(); };
+      img.src = blobUrl;
+    });
+  }));
+
+  onReady(canvas);
 }
 
 function WeatherOverlay({ tileUrl }) {
