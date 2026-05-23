@@ -32,7 +32,10 @@ export async function setupDiscord() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
   });
-  const { access_token } = await res.json();
+  const body = await res.json();
+  console.log('[discord] token response:', JSON.stringify(body));
+  const { access_token } = body;
 
-  await sdk.commands.authenticate({ access_token });
+  const auth = await sdk.commands.authenticate({ access_token });
+  console.log('[discord] authenticate result:', JSON.stringify(auth));
 }
