@@ -142,6 +142,10 @@ function FlightRoute({ flight }) {
   const routeColor = softenColor(color);
   const camDist = useContext(CamDistContext);
   const waypointDotRadius = 0.003 * (camDist / 5);
+  // Lines are brightest when zoomed out (camDist~5) and fade slightly when zoomed in
+  const zoomFactor = Math.min(camDist / 5, 1);
+  const unflownOpacity = 0.25 + zoomFactor * 0.5;  // 0.25 zoomed in → 0.75 zoomed out
+  const flownOpacity = 0.55 + zoomFactor * 0.35;   // 0.55 → 0.9
 
   const { unflownGeom, flownGeom, waypointPositions } = useMemo(() => {
     const curve = buildRoutePoints(waypoints);
@@ -182,14 +186,12 @@ function FlightRoute({ flight }) {
 
   return (
     <group>
-      {/* Unflown route — faint dashed-style line */}
       <line geometry={unflownGeom}>
-        <lineBasicMaterial color={routeColor} transparent opacity={0.35} depthWrite={false} />
+        <lineBasicMaterial color={routeColor} transparent opacity={unflownOpacity} depthWrite={false} />
       </line>
-      {/* Flown portion — solid, brighter */}
       {flownGeom && (
         <line geometry={flownGeom}>
-          <lineBasicMaterial color={routeColor} transparent opacity={0.75} depthWrite={false} />
+          <lineBasicMaterial color={routeColor} transparent opacity={flownOpacity} depthWrite={false} />
         </line>
       )}
       {/* Waypoint dots — single instanced mesh */}
@@ -477,6 +479,47 @@ function buildAtcSectorLines(boundaries, activeFirIds) {
   return new Float32Array(points);
 }
 
+function buildAtcSectorFills(boundaries, activeFirIds) {
+  // Build one merged BufferGeometry of triangles for all active FIR polygons,
+  // projected onto the globe surface at ATC_RADIUS.
+  const positions = [];
+  const indices = [];
+
+  for (const feature of boundaries.features) {
+    if (!activeFirIds.has(feature.properties.id)) continue;
+    const { type, coordinates } = feature.geometry;
+    const polys = type === 'Polygon' ? [coordinates] : type === 'MultiPolygon' ? coordinates : [];
+
+    for (const poly of polys) {
+      const outer = poly[0];
+      if (!outer || outer.length < 3) continue;
+
+      // Fan triangulation from centroid — good enough for convex/near-convex FIR shapes
+      const base = positions.length / 3;
+      const cx = outer.reduce((s, p) => s + p[0], 0) / outer.length;
+      const cy = outer.reduce((s, p) => s + p[1], 0) / outer.length;
+      const center = latLngToVec3(cy, cx, ATC_RADIUS);
+      positions.push(center.x, center.y, center.z);
+
+      for (const [lng, lat] of outer) {
+        const v = latLngToVec3(lat, lng, ATC_RADIUS);
+        positions.push(v.x, v.y, v.z);
+      }
+
+      // centroid is at base, ring verts at base+1 .. base+outer.length
+      for (let i = 1; i < outer.length; i++) {
+        indices.push(base, base + i, base + (i % outer.length) + 1);
+      }
+    }
+  }
+
+  if (positions.length === 0) return null;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+  geo.setIndex(indices);
+  return geo;
+}
+
 function AtcFirLabel({ id, lat, lng }) {
   const camDist = useContext(CamDistContext);
   const scale = (camDist / 5) * 0.6;
@@ -530,11 +573,21 @@ function AtcOverlay({ controllers, boundaries }) {
     return geo;
   }, [boundaries, firIds]);
 
+  const fillGeometry = useMemo(() => {
+    if (!boundaries || firIds.size === 0) return null;
+    return buildAtcSectorFills(boundaries, firIds);
+  }, [boundaries, firIds]);
+
   return (
     <>
+      {fillGeometry && (
+        <mesh geometry={fillGeometry}>
+          <meshBasicMaterial color="#40c8e0" transparent opacity={0.12} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      )}
       {sectorGeometry && (
         <lineSegments geometry={sectorGeometry}>
-          <lineBasicMaterial color="#40c8e0" transparent opacity={0.55} depthWrite={false} />
+          <lineBasicMaterial color="#40c8e0" transparent opacity={0.8} depthWrite={false} />
         </lineSegments>
       )}
       {firLabels.map(({ id, lat, lng }) => (
