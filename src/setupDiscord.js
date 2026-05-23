@@ -9,10 +9,29 @@ function getSdk() {
   return _sdk;
 }
 
+function tokenUrl() {
+  return location.host.includes('discordsays.com') ? '/.proxy/api/token' : '/api/token';
+}
+
 export async function setupDiscord() {
   const sdk = getSdk();
-  await Promise.race([
-    sdk.ready(),
-    new Promise((resolve) => setTimeout(resolve, 3000)),
-  ]);
+
+  await sdk.ready();
+
+  const { code } = await sdk.commands.authorize({
+    client_id: CLIENT_ID,
+    response_type: 'code',
+    state: '',
+    prompt: 'none',
+    scope: ['identify'],
+  });
+
+  const res = await fetch(tokenUrl(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  const { access_token } = await res.json();
+
+  await sdk.commands.authenticate({ access_token });
 }
