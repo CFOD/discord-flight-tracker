@@ -620,7 +620,96 @@ function getCityOpacity(camDist, rank) {
   return 1;
 }
 
-function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, cities, controllers, boundaries, rotating }) {
+const WEATHER_RADIUS = RADIUS + 0.004;
+
+const RAINVIEWER_API = import.meta.env.DEV
+  ? 'https://api.rainviewer.com/public/weather-maps.json'
+  : 'https://flightmap.cfod.co.uk/rainviewer/public/weather-maps.json';
+
+function useRainViewerUrl() {
+  const [tileUrl, setTileUrl] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchLatest() {
+      try {
+        const res = await fetch(RAINVIEWER_API);
+        const data = await res.json();
+        const latest = data.radar?.past?.at(-1);
+        if (!cancelled && latest) {
+          // In prod, rewrite tilecache.rainviewer.com through VPS proxy
+          const path = `${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
+          if (import.meta.env.DEV) {
+            setTileUrl(`${data.host}${path}`);
+          } else {
+            setTileUrl(`https://flightmap.cfod.co.uk/rainviewer-tiles${path}`);
+          }
+        }
+      } catch (_) {}
+    }
+    fetchLatest();
+    const interval = setInterval(fetchLatest, 5 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  return tileUrl;
+}
+
+function buildWeatherTexture(tileUrl, onReady) {
+  const ZOOM = 2;
+  const TILES = Math.pow(2, ZOOM);
+  const TILE_PX = 256;
+  const SIZE = TILES * TILE_PX;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext('2d');
+
+  let loaded = 0;
+  const total = TILES * TILES;
+
+  for (let x = 0; x < TILES; x++) {
+    for (let y = 0; y < TILES; y++) {
+      const url = tileUrl.replace('{z}', ZOOM).replace('{x}', x).replace('{y}', y);
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        ctx.drawImage(img, x * TILE_PX, y * TILE_PX, TILE_PX, TILE_PX);
+        loaded++;
+        if (loaded === total) onReady(canvas);
+      };
+      img.onerror = () => { loaded++; if (loaded === total) onReady(canvas); };
+      img.src = url;
+    }
+  }
+}
+
+function WeatherOverlay({ tileUrl }) {
+  const [texture, setTexture] = useState(null);
+  const prevUrl = useRef(null);
+
+  useEffect(() => {
+    if (!tileUrl || tileUrl === prevUrl.current) return;
+    prevUrl.current = tileUrl;
+    buildWeatherTexture(tileUrl, (canvas) => {
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.needsUpdate = true;
+      setTexture(tex);
+    });
+  }, [tileUrl]);
+
+  if (!texture) return null;
+
+  return (
+    <mesh>
+      <sphereGeometry args={[WEATHER_RADIUS, 128, 128]} />
+      <meshBasicMaterial map={texture} transparent opacity={0.6} depthWrite={false} side={THREE.FrontSide} blending={THREE.AdditiveBlending} />
+    </mesh>
+  );
+}
+
+function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, cities, controllers, boundaries, rotating, showAtc, showWeather, weatherTileUrl }) {
   const meshRef = useRef();
   const { gl } = useThree();
   const maxTexSize = gl.capabilities.maxTextureSize;
@@ -653,7 +742,8 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
       {activeBorderGeojson && <CountryBorders geojson={activeBorderGeojson} />}
       {geojson && labelOpacity > 0 && <CountryLabels geojson={geojson} opacity={labelOpacity} />}
       {cities.length > 0 && <CityLabels cities={cities} />}
-      {controllers.length > 0 && <AtcOverlay controllers={controllers} boundaries={boundaries} />}
+      {showWeather && <WeatherOverlay tileUrl={weatherTileUrl} />}
+      {showAtc && controllers.length > 0 && <AtcOverlay controllers={controllers} boundaries={boundaries} />}
       {flights.map((flight) => (
         <group key={flight.discordId}>
           {flight.waypoints?.length >= 2 && <FlightRoute flight={flight} />}
@@ -718,6 +808,30 @@ const BORDER_HIGH_THRESHOLD = 3.2;
 
 const isTouchDevice = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
+function ToggleButton({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: active ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
+        border: `1px solid ${active ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}`,
+        borderRadius: 8,
+        color: active ? '#e8edf5' : '#4a5568',
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+        padding: '5px 10px',
+        cursor: 'pointer',
+        fontFamily: 'Inter, system-ui, sans-serif',
+        transition: 'all 0.15s',
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function Globe({ flights, controllers, onFlightClick }) {
   const [geojson, setGeojson] = useState(null);
   const [geojson110m, setGeojson110m] = useState(null);
@@ -728,6 +842,9 @@ export function Globe({ flights, controllers, onFlightClick }) {
   const [boundaries, setBoundaries] = useState(null);
   const [camDist, setCamDist] = useState(5);
   const [rotating, setRotating] = useState(true);
+  const [showAtc, setShowAtc] = useState(true);
+  const [showWeather, setShowWeather] = useState(false);
+  const weatherTileUrl = useRainViewerUrl();
 
   useEffect(() => {
     fetch('/countries.geojson')
@@ -777,32 +894,46 @@ export function Globe({ flights, controllers, onFlightClick }) {
   }, []);
 
   return (
-    <Canvas
-      camera={{ position: [0, 0, 5], fov: 45 }}
-      style={{ width: '100%', height: '100%' }}
-      gl={{ antialias: true, alpha: true }}
-      onPointerDown={() => setRotating(false)}
-      onWheel={() => setRotating(false)}
-    >
-      <CamDistContext.Provider value={camDist}>
-        <ambientLight intensity={3.5} />
-        <pointLight position={[10, 10, 10]} intensity={2.5} />
-        <Suspense fallback={null}>
-          <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} geojson110m={geojson110m} geojson10m={geojson10m} cities={cities} controllers={controllers} boundaries={boundaries} rotating={rotating} />
-        </Suspense>
-        <CameraTracker onUpdate={setCamDist} />
-        <OrbitControls
-          enableZoom={true}
-          enablePan={false}
-          minDistance={2.5}
-          maxDistance={8}
-          autoRotate={false}
-          rotateSpeed={isTouchDevice ? 0.25 : 0.75}
-          dampingFactor={0.08}
-          enableDamping={true}
-          makeDefault
-        />
-      </CamDistContext.Provider>
-    </Canvas>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <Canvas
+        camera={{ position: [0, 0, 5], fov: 45 }}
+        style={{ width: '100%', height: '100%' }}
+        gl={{ antialias: true, alpha: true }}
+        onPointerDown={() => setRotating(false)}
+        onWheel={() => setRotating(false)}
+      >
+        <CamDistContext.Provider value={camDist}>
+          <ambientLight intensity={3.5} />
+          <pointLight position={[10, 10, 10]} intensity={2.5} />
+          <Suspense fallback={null}>
+            <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} geojson110m={geojson110m} geojson10m={geojson10m} cities={cities} controllers={controllers} boundaries={boundaries} rotating={rotating} showAtc={showAtc} showWeather={showWeather} weatherTileUrl={weatherTileUrl} />
+          </Suspense>
+          <CameraTracker onUpdate={setCamDist} />
+          <OrbitControls
+            enableZoom={true}
+            enablePan={false}
+            minDistance={2.5}
+            maxDistance={8}
+            autoRotate={false}
+            rotateSpeed={isTouchDevice ? 0.25 : 0.75}
+            dampingFactor={0.08}
+            enableDamping={true}
+            makeDefault
+          />
+        </CamDistContext.Provider>
+      </Canvas>
+      <div style={{
+        position: 'absolute',
+        bottom: 16,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        gap: 8,
+        zIndex: 50,
+      }}>
+        <ToggleButton label="ATC" active={showAtc} onClick={() => setShowAtc((v) => !v)} />
+        <ToggleButton label="Weather" active={showWeather} onClick={() => setShowWeather((v) => !v)} />
+      </div>
+    </div>
   );
 }

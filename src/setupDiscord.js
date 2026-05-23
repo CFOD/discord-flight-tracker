@@ -22,6 +22,8 @@ export async function setupDiscord() {
   patchUrlMappings([
     { prefix: '/ws', target: 'flightmap.cfod.co.uk' },
     { prefix: '/api', target: 'flightmap.cfod.co.uk' },
+    { prefix: '/rainviewer', target: 'flightmap.cfod.co.uk' },
+    { prefix: '/rainviewer-tiles', target: 'flightmap.cfod.co.uk' },
   ]);
 
   const { code } = await sdk.commands.authorize({
