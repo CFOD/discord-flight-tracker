@@ -699,19 +699,22 @@ function useRainViewerUrl() {
     let cancelled = false;
     async function fetchLatest() {
       try {
+        console.log('[weather] fetching api', RAINVIEWER_API);
         const res = await fetch(RAINVIEWER_API);
         const data = await res.json();
+        console.log('[weather] api ok, host:', data.host, 'past frames:', data.radar?.past?.length);
         const latest = data.radar?.past?.at(-1);
         if (!cancelled && latest) {
-          // In prod, rewrite tilecache.rainviewer.com through VPS proxy
           const path = `${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
-          if (import.meta.env.DEV) {
-            setTileUrl(`${data.host}${path}`);
-          } else {
-            setTileUrl(`https://flightmap.cfod.co.uk/rainviewer-tiles${path}`);
-          }
+          const url = import.meta.env.DEV
+            ? `${data.host}${path}`
+            : `https://flightmap.cfod.co.uk/rainviewer-tiles${path}`;
+          console.log('[weather] tile url template:', url);
+          setTileUrl(url);
         }
-      } catch (_) {}
+      } catch (e) {
+        console.log('[weather] api error', e);
+      }
     }
     fetchLatest();
     const interval = setInterval(fetchLatest, 5 * 60 * 1000);
@@ -723,11 +726,14 @@ function useRainViewerUrl() {
 
 async function fetchTileAsBlob(url) {
   try {
+    console.log('[weather] fetching tile', url);
     const res = await fetch(url);
+    console.log('[weather] tile response', res.status, url);
     if (!res.ok) return null;
     const blob = await res.blob();
     return URL.createObjectURL(blob);
-  } catch (_) {
+  } catch (e) {
+    console.log('[weather] tile error', e, url);
     return null;
   }
 }
