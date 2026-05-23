@@ -1,4 +1,4 @@
-import { DiscordSDK } from '@discord/embedded-app-sdk';
+import { DiscordSDK, patchUrlMappings } from '@discord/embedded-app-sdk';
 
 const CLIENT_ID = '1404391746284290068';
 
@@ -18,6 +18,11 @@ export async function setupDiscord() {
   const sdk = getSdk();
 
   await sdk.ready();
+
+  patchUrlMappings([
+    { prefix: '/ws', target: 'flightmap.cfod.co.uk' },
+    { prefix: '/api', target: 'flightmap.cfod.co.uk' },
+  ]);
 
   const { code } = await sdk.commands.authorize({
     client_id: CLIENT_ID,
