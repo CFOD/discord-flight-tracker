@@ -11,7 +11,7 @@ function getSdk() {
 
 function tokenUrl() {
   if (import.meta.env.DEV) return 'http://localhost:3001/api/token';
-  return '/.proxy/api/token';
+  return '/.proxy/token';
 }
 
 export async function setupDiscord() {
