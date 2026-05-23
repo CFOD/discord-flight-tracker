@@ -1,6 +1,7 @@
 import { useRef, useState, Suspense, useEffect, useMemo, createContext, useContext } from 'react';
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+import { Earcut } from 'three/src/extras/Earcut.js';
 
 const CamDistContext = createContext(5);
 import * as THREE from 'three';
@@ -498,7 +499,6 @@ function subdivideSphericalTri(a, b, c, r, depth, outPositions, outIndices) {
 }
 
 function buildAtcSectorFills(boundaries, activeFirIds) {
-  const { Earcut } = THREE;
   const positions = [];
   const indices = [];
 
