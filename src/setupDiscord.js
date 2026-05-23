@@ -11,7 +11,7 @@ function getSdk() {
 
 function tokenUrl() {
   if (import.meta.env.DEV) return 'http://localhost:3001/api/token';
-  return 'https://flightmap.cfod.co.uk/api/token';
+  return '/.proxy/api/token';
 }
 
 export async function setupDiscord() {
