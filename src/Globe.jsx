@@ -739,7 +739,7 @@ async function fetchTileAsBlob(url) {
 }
 
 async function buildWeatherTexture(tileUrl, onReady) {
-  const ZOOM = 2;
+  const ZOOM = 3;
   const TILES = Math.pow(2, ZOOM);
   const TILE_PX = 256;
   const SIZE = TILES * TILE_PX;
