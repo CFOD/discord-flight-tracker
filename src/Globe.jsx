@@ -832,9 +832,10 @@ function FlightMarker({ flight, onClick }) {
     const q = new THREE.Quaternion().setFromRotationMatrix(surfaceMatrix);
     const headingRad = ((flight.heading ?? 0) * Math.PI) / 180;
     const headingQ = new THREE.Quaternion().setFromAxisAngle(normal, -headingRad);
-    // Model is rolled 90° right — correct by rolling -90° around forward (Y) axis
+    // Correct model orientation: roll -90° then pitch up 90°
     const rollFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
-    return headingQ.multiply(q).multiply(rollFix);
+    const pitchFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+    return headingQ.multiply(q).multiply(rollFix).multiply(pitchFix);
   }, [pos, flight.heading]);
 
   return (
