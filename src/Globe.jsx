@@ -9,6 +9,7 @@ import { TextureLoader } from 'three';
 
 const EARTH_TEXTURE_4K = '/textures/earth-blue-marble.jpg';
 const EARTH_TEXTURE_8K = '/textures/earth-8k.jpg';
+const EARTH_TEXTURE_16K = '/textures/earth-16k.jpg';
 const BUMP_TEXTURE = '/textures/earth-topology.jpg';
 const RADIUS = 2;
 const BORDER_RADIUS = RADIUS + 0.003;
@@ -164,11 +165,11 @@ function FlightRoute({ flight }) {
   return (
     <group>
       <line geometry={unflownGeom}>
-        <lineBasicMaterial color={routeColor} transparent opacity={unflownOpacity} depthWrite={false} />
+        <lineBasicMaterial color={routeColor} transparent opacity={unflownOpacity} depthWrite={false} linewidth={3} />
       </line>
       {flownGeom && (
         <line geometry={flownGeom}>
-          <lineBasicMaterial color={routeColor} transparent opacity={flownOpacity} depthWrite={false} />
+          <lineBasicMaterial color={routeColor} transparent opacity={flownOpacity} depthWrite={false} linewidth={3} />
         </line>
       )}
       {/* Waypoint dots — single instanced mesh */}
@@ -775,7 +776,7 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
   const meshRef = useRef();
   const { gl } = useThree();
   const maxTexSize = gl.capabilities.maxTextureSize;
-  const earthTexture = maxTexSize >= 8192 ? EARTH_TEXTURE_8K : EARTH_TEXTURE_4K;
+  const earthTexture = maxTexSize >= 16384 ? EARTH_TEXTURE_16K : maxTexSize >= 8192 ? EARTH_TEXTURE_8K : EARTH_TEXTURE_4K;
   const [colorMap, bumpMap] = useLoader(TextureLoader, [earthTexture, BUMP_TEXTURE]);
 
   colorMap.colorSpace = THREE.SRGBColorSpace;
