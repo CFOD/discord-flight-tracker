@@ -1,6 +1,6 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-29T18:01:50.549Z
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-29T17:55:02.433Z
 > Files: 40 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ../../../../tmp/
@@ -86,4 +86,4 @@
 
 ## src/
 
-- `Globe.jsx` — CamDistContext (~10418 tok)
+- `Globe.jsx` — CamDistContext (~10383 tok)
