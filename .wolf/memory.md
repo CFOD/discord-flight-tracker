@@ -708,3 +708,15 @@
 | 11:56 | Edited ../../Documents/GitHub/flight-activity/src/Globe.jsx | CSS: 3 | ~30 |
 | 11:56 | Session end: 4 writes across 2 files (FlightSidebar.jsx, Globe.jsx) | 2 reads | ~213 tok |
 | 18:25 | Session end: 4 writes across 2 files (FlightSidebar.jsx, Globe.jsx) | 2 reads | ~213 tok |
+
+## Session: 2026-05-29 18:38
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 18:51 | Edited src/Globe.jsx | modified buildAtcSectorLines() | ~336 |
+
+| 18:51 | Fixed ATC zone line clipping — buildAtcSectorLines now slerps great-circle arcs (5° max step) instead of straight chords | src/Globe.jsx | success |
+| 18:51 | Session end: 1 writes across 1 files (Globe.jsx) | 1 reads | ~336 tok |
+| 18:55 | Edited src/Globe.jsx | CSS: adaptive | ~280 |
+| 18:56 | Fixed ATC sector fill clipping — adaptive subdivision depth based on triangle arc length instead of fixed depth=2 | src/Globe.jsx | success |
+| 18:56 | Session end: 2 writes across 1 files (Globe.jsx) | 1 reads | ~10872 tok |
