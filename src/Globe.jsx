@@ -120,6 +120,11 @@ function FlightRoute({ flight }) {
   const unflownOpacity = 0.25 + zoomFactor * 0.5;  // 0.25 zoomed in → 0.75 zoomed out
   const flownOpacity = 0.55 + zoomFactor * 0.35;   // 0.55 → 0.9
 
+  // Stable key for waypoints — only recompute geometry when the route actually changes
+  const waypointsKey = useMemo(() =>
+    waypoints ? waypoints.map((w) => `${w.lat},${w.lon}`).join('|') : ''
+  , [waypoints]);
+
   const { unflownGeom, flownGeom, waypointPositions } = useMemo(() => {
     const curve = buildRoutePoints(waypoints);
     if (!curve) return {};
@@ -127,7 +132,6 @@ function FlightRoute({ flight }) {
     const totalPoints = Math.max(waypoints.length * 4, 120);
     const allPositions = curve.getPoints(totalPoints);
 
-    // Split into flown / unflown at closest point to current plane position
     const planeVec = latLngToVec3(flight.lat, flight.lon, RADIUS);
     let closestIdx = 0;
     let closestDist = Infinity;
@@ -153,7 +157,7 @@ function FlightRoute({ flight }) {
     );
 
     return { unflownGeom, flownGeom, waypointPositions };
-  }, [waypoints, flight.lat, flight.lon]);
+  }, [waypointsKey, flight.lat, flight.lon]);
 
   if (!unflownGeom) return null;
 
@@ -814,17 +818,30 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
   );
 }
 
+// Precomputed orientation correction for this model (roll, pitch, z fixes)
+const MODEL_ORIENTATION_FIX = (() => {
+  const rollFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
+  const pitchFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+  const zFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.PI / 2);
+  return rollFix.multiply(pitchFix).multiply(zFix);
+})();
+
 function FlightMarker({ flight, onClick }) {
   const [hovered, setHovered] = useState(false);
+  const groupRef = useRef();
   const camDist = useContext(CamDistContext);
   const scale = (camDist / 5) * (hovered ? 0.000055 : 0.000045) * 0.01;
-  const lift = altToLift(flight.altitude);
-  const pos = latLngToVec3(flight.lat, flight.lon, RADIUS + lift + 0.001);
 
   const { scene } = useGLTF('/models/a380-opt.glb');
   const cloned = useMemo(() => scene.clone(true), [scene]);
 
-  const quaternion = useMemo(() => {
+  // Imperatively update position + quaternion so the primitive always reflects latest flight data
+  useFrame(() => {
+    if (!groupRef.current) return;
+    const lift = altToLift(flight.altitude);
+    const pos = latLngToVec3(flight.lat, flight.lon, RADIUS + lift + 0.001);
+    groupRef.current.position.copy(pos);
+
     const normal = pos.clone().normalize();
     const up = new THREE.Vector3(0, 1, 0);
     const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
@@ -832,23 +849,19 @@ function FlightMarker({ flight, onClick }) {
     const q = new THREE.Quaternion().setFromRotationMatrix(surfaceMatrix);
     const headingRad = ((flight.heading ?? 0) * Math.PI) / 180;
     const headingQ = new THREE.Quaternion().setFromAxisAngle(normal, -headingRad);
-    // Correct model orientation
-    const rollFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
-    const pitchFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-    const zFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.PI / 2);
-    return headingQ.multiply(q).multiply(rollFix).multiply(pitchFix).multiply(zFix);
-  }, [pos, flight.heading]);
+    groupRef.current.quaternion.copy(headingQ.multiply(q).multiply(MODEL_ORIENTATION_FIX.clone()));
+  });
 
   return (
-    <primitive
-      object={cloned}
-      position={pos}
-      quaternion={quaternion}
+    <group
+      ref={groupRef}
       scale={[scale, scale, scale]}
       onClick={(e) => { e.stopPropagation(); onClick(flight, e.nativeEvent ?? e); }}
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
-    />
+    >
+      <primitive object={cloned} />
+    </group>
   );
 }
 
