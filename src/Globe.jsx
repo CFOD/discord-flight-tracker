@@ -817,7 +817,7 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
 function FlightMarker({ flight, onClick }) {
   const [hovered, setHovered] = useState(false);
   const camDist = useContext(CamDistContext);
-  const scale = (camDist / 5) * (hovered ? 0.000000055 : 0.000000045);
+  const scale = (camDist / 5) * (hovered ? 0.000055 : 0.000045) * 0.01;
   const lift = altToLift(flight.altitude);
   const pos = latLngToVec3(flight.lat, flight.lon, RADIUS + lift + 0.001);
 
