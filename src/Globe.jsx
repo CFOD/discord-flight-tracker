@@ -1002,6 +1002,7 @@ export function Globe({ flights, controllers, onFlightClick }) {
             maxDistance={8}
             autoRotate={false}
             rotateSpeed={isTouchDevice ? 0.25 : 0.75}
+            zoomSpeed={isTouchDevice ? 0.3 : 1.0}
             dampingFactor={0.08}
             enableDamping={true}
             makeDefault
