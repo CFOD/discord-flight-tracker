@@ -1,6 +1,6 @@
 import { useRef, useState, Suspense, useEffect, useMemo, createContext, useContext } from 'react';
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { OrbitControls, useGLTF } from '@react-three/drei';
 import { Earcut } from 'three/src/extras/Earcut.js';
 
 const CamDistContext = createContext(5);
@@ -80,35 +80,7 @@ function softenColor(hex) {
   return '#' + c.getHexString();
 }
 
-function buildPlaneShape() {
-  const s = new THREE.Shape();
-  // Top-down aircraft silhouette, nose pointing +Y
-  // Fuselage
-  s.moveTo(0, 0.5);
-  s.lineTo(0.06, 0.3);
-  s.lineTo(0.05, -0.1);
-  // Right wing
-  s.lineTo(0.5, -0.05);
-  s.lineTo(0.48, -0.18);
-  s.lineTo(0.05, -0.22);
-  // Tail right
-  s.lineTo(0.18, -0.5);
-  s.lineTo(0.12, -0.52);
-  s.lineTo(0, -0.38);
-  // Tail left
-  s.lineTo(-0.12, -0.52);
-  s.lineTo(-0.18, -0.5);
-  s.lineTo(-0.05, -0.22);
-  // Left wing
-  s.lineTo(-0.48, -0.18);
-  s.lineTo(-0.5, -0.05);
-  s.lineTo(-0.05, -0.1);
-  s.lineTo(-0.06, 0.3);
-  s.closePath();
-  return s;
-}
-
-const PLANE_SHAPE = buildPlaneShape();
+useGLTF.setDecoderPath('/draco/');
 
 const _waypointDotGeom = new THREE.SphereGeometry(1, 4, 4);
 const _waypointDotMat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false });
@@ -843,39 +815,52 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
 function FlightMarker({ flight, onClick }) {
   const [hovered, setHovered] = useState(false);
   const camDist = useContext(CamDistContext);
-  const scale = (camDist / 5) * (hovered ? 0.022 : 0.018);
+  const scale = (camDist / 5) * (hovered ? 0.0055 : 0.0045);
   const lift = altToLift(flight.altitude);
   const pos = latLngToVec3(flight.lat, flight.lon, RADIUS + lift + 0.001);
-  const color = flight.color ?? '#e8f0ff';
+  const color = new THREE.Color(flight.color ?? '#e8f0ff');
 
-  // Orient the plane flat on the globe surface, nose pointing along heading
+  const { scene } = useGLTF('/models/a380-opt.glb');
+
+  const cloned = useMemo(() => {
+    const clone = scene.clone(true);
+    // Tint all meshes to the pilot's colour
+    clone.traverse((obj) => {
+      if (obj.isMesh) {
+        obj.material = obj.material.clone();
+        obj.material.color = color;
+        obj.material.emissive = color;
+        obj.material.emissiveIntensity = 0.25;
+      }
+    });
+    return clone;
+  }, [scene, flight.color]);
+
   const quaternion = useMemo(() => {
     const normal = pos.clone().normalize();
     const up = new THREE.Vector3(0, 1, 0);
     const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
-    // Align flat to surface
     const surfaceMatrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0, 0, 0), safeUp);
     const q = new THREE.Quaternion().setFromRotationMatrix(surfaceMatrix);
-    // Rotate around surface normal by heading
     const headingRad = ((flight.heading ?? 0) * Math.PI) / 180;
     const headingQ = new THREE.Quaternion().setFromAxisAngle(normal, -headingRad);
     return headingQ.multiply(q);
   }, [pos, flight.heading]);
 
   return (
-    <mesh
+    <primitive
+      object={cloned}
       position={pos}
       quaternion={quaternion}
       scale={[scale, scale, scale]}
       onClick={(e) => { e.stopPropagation(); onClick(flight, e.nativeEvent ?? e); }}
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
-    >
-      <shapeGeometry args={[PLANE_SHAPE]} />
-      <meshBasicMaterial color={color} side={THREE.DoubleSide} />
-    </mesh>
+    />
   );
 }
+
+useGLTF.preload('/models/a380-opt.glb');
 
 function CameraTracker({ onUpdate }) {
   const lastRef = useRef(5);
