@@ -802,12 +802,14 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
       {cities.length > 0 && <CityLabels cities={cities} />}
       {showWeather && <WeatherOverlay tileUrl={weatherTileUrl} />}
       {showAtc && controllers.length > 0 && <AtcOverlay controllers={controllers} boundaries={boundaries} />}
-      {flights.map((flight) => (
-        <group key={flight.discordId}>
-          {flight.waypoints?.length >= 2 && <FlightRoute flight={flight} />}
-          <FlightMarker flight={flight} onClick={onFlightClick} />
-        </group>
-      ))}
+      <Suspense fallback={null}>
+        {flights.map((flight) => (
+          <group key={flight.discordId}>
+            {flight.waypoints?.length >= 2 && <FlightRoute flight={flight} />}
+            <FlightMarker flight={flight} onClick={onFlightClick} />
+          </group>
+        ))}
+      </Suspense>
     </group>
   );
 }
@@ -818,23 +820,9 @@ function FlightMarker({ flight, onClick }) {
   const scale = (camDist / 5) * (hovered ? 0.0055 : 0.0045);
   const lift = altToLift(flight.altitude);
   const pos = latLngToVec3(flight.lat, flight.lon, RADIUS + lift + 0.001);
-  const color = new THREE.Color(flight.color ?? '#e8f0ff');
 
   const { scene } = useGLTF('/models/a380-opt.glb');
-
-  const cloned = useMemo(() => {
-    const clone = scene.clone(true);
-    // Tint all meshes to the pilot's colour
-    clone.traverse((obj) => {
-      if (obj.isMesh) {
-        obj.material = obj.material.clone();
-        obj.material.color = color;
-        obj.material.emissive = color;
-        obj.material.emissiveIntensity = 0.25;
-      }
-    });
-    return clone;
-  }, [scene, flight.color]);
+  const cloned = useMemo(() => scene.clone(true), [scene]);
 
   const quaternion = useMemo(() => {
     const normal = pos.clone().normalize();
