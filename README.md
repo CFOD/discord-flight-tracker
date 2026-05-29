@@ -1,16 +1,53 @@
-# React + Vite
+# Discord Flight Tracker
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A Discord Activity that displays a real-time 3D flight tracking map for Microsoft Flight Simulator sessions. Embedded directly in Discord voice channels — no external app needed.
 
-Currently, two official plugins are available:
+Built with React, Three.js (via React Three Fiber), and the Discord Embedded App SDK.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Features
 
-## React Compiler
+- Interactive 3D globe with real-time aircraft positions
+- Flight info sidebar with per-aircraft details
+- High-resolution earth textures and GeoJSON country/city overlays
+- Runs as a Discord Activity inside voice channels
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tech Stack
 
-## Expanding the ESLint configuration
+- [React](https://react.dev/) + [Vite](https://vite.dev/)
+- [React Three Fiber](https://docs.pmnd.rs/react-three-fiber) + [Drei](https://github.com/pmndrs/drei)
+- [Discord Embedded App SDK](https://github.com/discord/embedded-app-sdk)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Setup
+
+1. Clone the repo and install dependencies:
+
+```bash
+npm install
+```
+
+2. Copy `.env.example` to `.env` and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Description |
+|---|---|
+| `VITE_CLIENT_ID` | Your Discord application client ID |
+| `VITE_API_HOST` | Hostname for the flight data API/WebSocket proxy |
+
+3. Start the dev server:
+
+```bash
+npm run dev
+```
+
+## Deployment
+
+See `deploy.sh` for the deployment script.
+
+## Legal
+
+- [Terms of Service](https://cfod.github.io/discord-flight-tracker/tos.html)
+- [Privacy Policy](https://cfod.github.io/discord-flight-tracker/privacy.html)
+
