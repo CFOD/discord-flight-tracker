@@ -16,19 +16,10 @@ dist-ssr
 .env.*
 !.env.example
 
-# OpenWolf runtime state (not portable between devices)
-.wolf/cron-manifest.json
-.wolf/cron-state.json
-.wolf/token-ledger.json
-.wolf/designqc-report.json
-.wolf/suggestions.json
-.wolf/session-*.md
-.wolf/designqc-captures/
-.wolf/hooks/_session.json
-
-# Claude Code local settings
-.claude/settings.local.json
-.claude/scheduled_tasks.lock
+# OpenWolf and Claude Code (local only, not committed)
+.wolf/
+.claude/
+CLAUDE.md
 
 # Editor directories and files
 .vscode/*
