@@ -1011,11 +1011,15 @@ export function Globe({ flights, controllers, onFlightClick }) {
       <div style={{
         position: 'absolute',
         bottom: 16,
-        left: '50%',
-        transform: 'translateX(-50%)',
+        left: 16,
         display: 'flex',
         gap: 8,
         zIndex: 50,
+        background: 'rgba(8, 12, 24, 0.75)',
+        backdropFilter: 'blur(8px)',
+        borderRadius: 10,
+        padding: '6px 8px',
+        border: '1px solid rgba(255,255,255,0.07)',
       }}>
         <ToggleButton label="ATC" active={showAtc} onClick={() => setShowAtc((v) => !v)} />
         <ToggleButton label="Weather" active={showWeather} onClick={() => setShowWeather((v) => !v)} />

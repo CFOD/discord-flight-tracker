@@ -161,10 +161,10 @@ export function FlightSidebar({ users, flights, onFlightClick }) {
   return (
     <div style={{
       position: 'fixed',
-      top: 16,
+      top: 60,
       right: 16,
       width: 220,
-      maxHeight: 'calc(100vh - 32px)',
+      maxHeight: 'calc(100vh - 76px)',
       overflowY: collapsed ? 'hidden' : 'auto',
       background: 'rgba(8, 12, 24, 0.82)',
       backdropFilter: 'blur(8px)',
