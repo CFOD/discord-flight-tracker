@@ -531,12 +531,15 @@ function buildAtcSectorFills(boundaries, activeFirIds) {
         const vb = latLngToVec3(flat2d[ib * 2 + 1], flat2d[ib * 2], ATC_RADIUS);
         const vc = latLngToVec3(flat2d[ic * 2 + 1], flat2d[ic * 2], ATC_RADIUS);
         const na = va.clone().normalize(), nb = vb.clone().normalize(), nc = vc.clone().normalize();
+        const clampedDot = (a, b) => Math.max(-1, Math.min(1, a.dot(b)));
         const maxAngle = Math.max(
-          Math.acos(Math.min(1, na.dot(nb))),
-          Math.acos(Math.min(1, nb.dot(nc))),
-          Math.acos(Math.min(1, nc.dot(na)))
+          Math.acos(clampedDot(na, nb)),
+          Math.acos(clampedDot(nb, nc)),
+          Math.acos(clampedDot(nc, na))
         );
-        const depth = Math.max(0, Math.ceil(Math.log2(maxAngle / ARC_STEP)));
+        const depth = Number.isFinite(maxAngle)
+          ? Math.min(5, Math.max(0, Math.ceil(Math.log2(maxAngle / ARC_STEP))))
+          : 2;
         subdivideSphericalTri(va, vb, vc, ATC_RADIUS, depth, positions, indices);
       }
     }
