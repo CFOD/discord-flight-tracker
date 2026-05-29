@@ -461,8 +461,6 @@ function CityLabels({ cities }) {
   );
 }
 
-const ARC_STEP = 5 * (Math.PI / 180); // max angular gap per line sub-segment
-
 function buildAtcSectorLines(boundaries, activeFirIds) {
   const points = [];
   for (const feature of boundaries.features) {
@@ -473,15 +471,9 @@ function buildAtcSectorLines(boundaries, activeFirIds) {
       for (let i = 0; i < ring.length - 1; i++) {
         const [lng1, lat1] = ring[i];
         const [lng2, lat2] = ring[i + 1];
-        const n1 = latLngToVec3(lat1, lng1, 1);
-        const n2 = latLngToVec3(lat2, lng2, 1);
-        const angle = Math.acos(Math.min(1, n1.dot(n2)));
-        const steps = Math.max(1, Math.ceil(angle / ARC_STEP));
-        for (let s = 0; s < steps; s++) {
-          const pa = new THREE.Vector3().slerpVectors(n1, n2, s / steps).multiplyScalar(ATC_RADIUS);
-          const pb = new THREE.Vector3().slerpVectors(n1, n2, (s + 1) / steps).multiplyScalar(ATC_RADIUS);
-          points.push(pa.x, pa.y, pa.z, pb.x, pb.y, pb.z);
-        }
+        const v1 = latLngToVec3(lat1, lng1, ATC_RADIUS);
+        const v2 = latLngToVec3(lat2, lng2, ATC_RADIUS);
+        points.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
       }
     }
   }
@@ -523,21 +515,13 @@ function buildAtcSectorFills(boundaries, activeFirIds) {
       const flat2d = outer.flatMap(([lng, lat]) => [lng, lat]);
       const triIndices = Earcut.triangulate(flat2d, null, 2);
 
-      // For each triangle, project verts onto sphere and subdivide.
-      // Depth is adaptive: enough levels so no sub-edge exceeds 5° of arc.
+      // For each triangle, project verts onto sphere and subdivide
       for (let i = 0; i < triIndices.length; i += 3) {
         const [ia, ib, ic] = [triIndices[i], triIndices[i + 1], triIndices[i + 2]];
         const va = latLngToVec3(flat2d[ia * 2 + 1], flat2d[ia * 2], ATC_RADIUS);
         const vb = latLngToVec3(flat2d[ib * 2 + 1], flat2d[ib * 2], ATC_RADIUS);
         const vc = latLngToVec3(flat2d[ic * 2 + 1], flat2d[ic * 2], ATC_RADIUS);
-        const na = va.clone().normalize(), nb = vb.clone().normalize(), nc = vc.clone().normalize();
-        const maxAngle = Math.max(
-          Math.acos(Math.min(1, na.dot(nb))),
-          Math.acos(Math.min(1, nb.dot(nc))),
-          Math.acos(Math.min(1, nc.dot(na)))
-        );
-        const depth = Math.max(0, Math.ceil(Math.log2(maxAngle / ARC_STEP)));
-        subdivideSphericalTri(va, vb, vc, ATC_RADIUS, depth, positions, indices);
+        subdivideSphericalTri(va, vb, vc, ATC_RADIUS, 2, positions, indices);
       }
     }
   }

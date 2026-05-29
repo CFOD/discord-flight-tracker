@@ -1,7 +1,7 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-29T17:55:02.433Z
-> Files: 40 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-29T10:56:23.590Z
+> Files: 39 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ../../../../tmp/
 
@@ -83,7 +83,3 @@
 ## docs/superpowers/plans/
 
 - `2026-05-20-discord-activity-3d-globe.md` — Discord Activity — 3D Flight Globe Implementation Plan (~5126 tok)
-
-## src/
-
-- `Globe.jsx` — CamDistContext (~10383 tok)
