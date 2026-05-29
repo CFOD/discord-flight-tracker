@@ -1,0 +1,110 @@
+[
+  {
+    "id": "bug-001",
+    "timestamp": "2026-04-19T00:00:00.000Z",
+    "error_message": "ReferenceError: simbrief is not defined at dataStore.js:92",
+    "file": "src/dataStore.js",
+    "root_cause": "simbrief module used (isSuppressed, suppress) but never required at top of file",
+    "fix": "Added `const simbrief = require('./pollers/simbrief');` after path require on line 4",
+    "tags": ["missing-require", "referenceError", "dataStore", "simbrief", "crash-loop"],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-04-19T00:00:00.000Z"
+  },
+  {
+    "id": "bug-002",
+    "timestamp": "2026-04-22T00:00:00.000Z",
+    "error_message": "focusZoomMultiplier=10 has no effect on zoom level for focused pilot near destination",
+    "file": "src/autoZoom.js",
+    "root_cause": "The FIXED_ZOOM block (after bboxToView call) comes AFTER the single-point guard early-return. When a long-haul flight is near destination, the dynamic virtual-origin slides close to current position, shrinking the effective bbox below 4 degrees lon/lat, triggering the early-return guard. The FIXED_ZOOM block is never reached.",
+    "fix": "Moved focusZoomMultiplier > 1 check BEFORE the single-point bbox guard in autoZoom.js. Also updated FIXED_ZOOM keys to internal sequential values {2:8,3:9,4:10,5:11,6:13}. index.js zoom menu updated to 6 choices (internal 1-6, display 1x/2x/3x/5x/7x/10x). Applied 2026-04-22.",
+    "tags": ["zoom", "focus", "autoZoom", "single-point-guard", "silent-fail"],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-04-22T00:00:00.000Z"
+  },
+  {
+    "id": "bug-003",
+    "timestamp": "2026-04-22T00:00:00.000Z",
+    "error_message": "[SimBrief] fetch error for Mysteron77: Request failed with status code 400",
+    "file": "src/pollers/simbrief.js",
+    "root_cause": "SimBrief returns HTTP 400 with body {status: 'Error: No flight plan on file for the specified user'} when the user exists but has no active OFP. fetchSimbrief() has no 400-specific handling — on every cache miss it retries, saturating the error log continuously.",
+    "fix": "In fetchSimbrief() catch block: check e.response?.status === 400, cache null with CACHE_TTL_MS, log via console.log (not console.error). Applied 2026-04-22.",
+    "tags": ["simbrief", "400", "no-flight-plan", "retry-flood", "Mysteron77"],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-04-22T00:00:00.000Z"
+  },
+  {
+    "id": "bug-004",
+    "timestamp": "2026-04-25T00:00:00.000Z",
+    "error_message": "Route line draws across entire map for trans-Pacific flights (US → Japan)",
+    "file": "src/mapRenderer.js",
+    "root_cause": "Canvas lineTo() between consecutive waypoints straddling the antimeridian produced a horizontal stroke across the full canvas. The dLon > 170 degree check was a false-negative: waypoints near lon=170/180 have dLon only ~10°, but project to a 1400px gap. Degree-space check cannot detect this.",
+    "fix": "Replaced dLon > 170 check with pixel-space check: Math.abs(x - prevX) > IMG_W / 2. If projected x-coords jump more than half the canvas width, use moveTo() instead of lineTo(). Projection-agnostic — catches the symptom regardless of longitude storage format.",
+    "tags": ["antimeridian", "mapRenderer", "polyline", "canvas", "pacific", "route"],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-04-25T00:00:00.000Z"
+  },
+  {
+    "id": "bug-005",
+    "timestamp": "2026-05-01T20:10:00.000Z",
+    "error_message": "DiscordjsError [TokenInvalid]: An invalid token was provided.",
+    "file": "/home/admin/programmes/flight-tracker-bot/.env (DISCORD_TOKEN)",
+    "root_cause": "Discord bot token in .env has been revoked or regenerated in the Discord Developer Portal. Token format looks valid (72 chars, 2 dots, starts MTQwN) but Discord rejects it. Bot crashes on every login attempt, PM2 restarts it, causing a crash loop. 3 restarts in 38 minutes.",
+    "fix": "Generate a new bot token in Discord Developer Portal (Bot > Reset Token), update DISCORD_TOKEN in /home/admin/programmes/flight-tracker-bot/.env, then run: pm2 restart flight-tracker --update-env",
+    "tags": ["TokenInvalid", "discord", "crash-loop", "token-revoked", ".env"],
+    "related_bugs": ["bug-006"],
+    "occurrences": 1,
+    "last_seen": "2026-05-01T20:10:00.000Z"
+  },
+  {
+    "id": "bug-006",
+    "timestamp": "2026-05-01T20:35:00.000Z",
+    "error_message": "DiscordjsError [TokenInvalid]: An invalid token was provided. (token present in .env but not loaded)",
+    "file": "src/index.js",
+    "root_cause": "PM2 sets process CWD to src/ (the directory containing the script), not the project root. `require('dotenv').config()` with no arguments looks for .env in process.cwd() = /home/admin/programmes/flight-tracker-bot/src/ — but .env is one directory up at /home/admin/programmes/flight-tracker-bot/.env. Token never loaded, DISCORD_TOKEN is undefined, Discord rejects login as TokenInvalid.",
+    "fix": "Changed line 2 of src/index.js from `require('dotenv').config()` to `require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') })`. Uses __dirname (always the src/ directory) to explicitly resolve to project root .env. Restarted with `pm2 restart flight-tracker`. Bot now logs in and posts map.",
+    "tags": ["TokenInvalid", "dotenv", "cwd", "pm2", "env", "crash-loop", "missing-token"],
+    "related_bugs": ["bug-005"],
+    "occurrences": 1,
+    "last_seen": "2026-05-01T20:35:00.000Z"
+  },
+  {
+    "id": "bug-007",
+    "timestamp": "2026-05-02T00:00:00.000Z",
+    "error_message": "Aircraft icon renders at stale/wrong position (Sharp shown near Philippines instead of North Atlantic)",
+    "file": "src/dataStore.js",
+    "root_cause": "getRegisteredFlights() stamped fixAt: Date.now() on every call. positionInterpolator treats any new fixAt as a 'new fix' and starts a 3s blend from lastDisplayPos toward the dead-reckoned position. Since render cycles are 20s apart, a new blend is triggered every cycle at t=0 — the blend never reaches t=1 and the icon is always shown at the old stale position.",
+    "fix": "In getRegisteredFlights(), compute fixAt by comparing current lat/lon to the existing lastKnownPositions entry. Only stamp Date.now() when position actually changed (delta > 0.0001°). Otherwise carry forward prev.fixAt. This keeps fixAt stable between poll cycles so the interpolator's blend completes normally.",
+    "tags": ["positionInterpolator", "fixAt", "blend", "stale-position", "dataStore", "dead-reckoning"],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-05-02T00:00:00.000Z"
+  },
+  {
+    "id": "bug-009",
+    "timestamp": "2026-05-20T00:00:00.000Z",
+    "error_message": "Click hit detection misaligned with visual marker positions on globe",
+    "file": "src/globe.js",
+    "root_cause": "latLonToXY applied theta as a Z-axis roll (rotating x/y plane) instead of an X-axis tilt. The return value mixed cos(theta)/sin(theta) across x3 and y3 in both x and y outputs, which models a 2D canvas rotation rather than the forward-tilt that Cobe's theta parameter actually applies.",
+    "fix": "Changed x return to `width / 2 + x3 * scale` (no theta), and y return to `height / 2 - (y3 * scale * Math.cos(theta) - z3 * scale * Math.sin(theta))`. Uses z3 (depth component) in the Y axis calculation to correctly model how theta tilts the globe toward the viewer along the X axis.",
+    "tags": ["globe", "latLonToXY", "theta", "projection", "hit-detection", "cobe", "x-axis-tilt"],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-05-20T00:00:00.000Z"
+  },
+  {
+    "id": "bug-008",
+    "timestamp": "2026-05-03T00:00:00.000Z",
+    "error_message": "VATSIM-sourced pilot not showing on map despite being airborne and connected",
+    "file": "src/index.js",
+    "root_cause": "The `toggle_vatsim` button (intended to toggle ATC sector drawing) was incorrectly implemented to also filter VATSIM-sourced pilots out of flightsToRender. `showVatsim: false` in map-state.json caused the line `activeFlights.filter(f => f.source !== 'Vatsim')` to remove all VATSIM pilots from the render, even though mapRenderer.js never uses showVatsim — it only uses showAtc (line 307) for ATC sector drawing.",
+    "fix": "Removed the flightsToRender ternary filter entirely. `flightsToRender` is now always `activeFlights`. Also set showVatsim: true in map-state.json and restarted PM2.",
+    "tags": ["vatsim", "showVatsim", "filter", "pilot-missing", "index.js", "toggle"],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-05-03T00:00:00.000Z"
+  }
+]
