@@ -825,8 +825,8 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
 const MODEL_ORIENTATION_FIX = (() => {
   const m = new THREE.Matrix4().makeBasis(
     new THREE.Vector3(0, 1,  0),  // model +X (nose)      → +Y (north, pre-heading)
-    new THREE.Vector3(0, 0,  1),  // model +Y (left wing) → +Z (surface normal)
-    new THREE.Vector3(-1, 0, 0)   // model +Z (up)        → -X (roll left 90°)
+    new THREE.Vector3(0, 0, -1),  // model +Y (left wing) → -Z (roll right 90°)
+    new THREE.Vector3(1, 0,  0)   // model +Z (up)        → +X
   );
   return new THREE.Quaternion().setFromRotationMatrix(m);
 })();
