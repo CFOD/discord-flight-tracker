@@ -820,16 +820,15 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
 }
 
 // Model native axes: nose=+X, up=+Z, left-wing=+Y
-// Target: nose→-Z (forward in lookAt space), up→+Y, right-wing→+X
-// makeBasis(newX, newY, newZ) = where model X,Y,Z go in world space
-const MODEL_ORIENTATION_FIX = (() => {
-  const m = new THREE.Matrix4().makeBasis(
-    new THREE.Vector3(0, 1,  0),  // model +X (nose)      → +Y (north, pre-heading)
-    new THREE.Vector3(0, 0, -1),  // model +Y (left wing) → -Z (roll right 90°)
-    new THREE.Vector3(1, 0,  0)   // model +Z (up)        → +X
-  );
-  return new THREE.Quaternion().setFromRotationMatrix(m);
-})();
+// Surface frame: east=+X, north=+Y, normal=+Z
+// We need: model nose (+X) → north (+Y), model up (+Z) → normal (+Z), model left-wing (+Y) → west (-X)
+const MODEL_ORIENTATION_FIX = new THREE.Quaternion().setFromRotationMatrix(
+  new THREE.Matrix4().makeBasis(
+    new THREE.Vector3( 0, 1, 0),  // model +X (nose)      → +Y (north)
+    new THREE.Vector3(-1, 0, 0),  // model +Y (left wing) → -X (west)
+    new THREE.Vector3( 0, 0, 1)   // model +Z (up)        → +Z (normal)
+  )
+);
 
 function FlightMarker({ flight, onClick }) {
   const [hovered, setHovered] = useState(false);
