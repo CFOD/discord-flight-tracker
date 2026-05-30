@@ -776,7 +776,7 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
   const meshRef = useRef();
   const { gl } = useThree();
   const maxTexSize = gl.capabilities.maxTextureSize;
-  const earthTexture = EARTH_TEXTURE_16K;
+  const earthTexture = maxTexSize >= 16384 ? EARTH_TEXTURE_16K : maxTexSize >= 8192 ? EARTH_TEXTURE_8K : EARTH_TEXTURE_4K;
   const [colorMap, bumpMap] = useLoader(TextureLoader, [earthTexture, BUMP_TEXTURE]);
 
   colorMap.colorSpace = THREE.SRGBColorSpace;
