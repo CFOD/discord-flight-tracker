@@ -824,8 +824,7 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
 // We need: model nose (+X) → north (+Y), model up (+Z) → normal (+Z), model left-wing (+Y) → west (-X)
 // Model axes (from GLB bounding box): nose=+Y, belly-up=+Z
 // lookAt gives us: group -Z = north, group +Y = surface normal (up)
-// Need: nose(+Y) → north(-Z), belly(+Z) → up(+Y)
-// That's a +90° rotation around the X axis
+// +90° around X maps: nose(+Y)→north(-Z) ✓  belly(+Z)→up(+Y) ✓
 const MODEL_ORIENTATION_FIX = new THREE.Quaternion().setFromAxisAngle(
   new THREE.Vector3(1, 0, 0), Math.PI / 2
 );
@@ -848,19 +847,19 @@ function FlightMarker({ flight, onClick }) {
 
     const normal = pos.clone().normalize();
 
-    // Step 1: Orient the group so its +Y points away from globe surface (up)
-    // and its -Z points toward north. Use Object3D.up + lookAt for this.
-    groupRef.current.up.copy(normal);
-    // lookAt a point "north" of the plane's position on the surface
+    // Build an explicit surface frame: north and east tangent vectors
     const worldNorth = new THREE.Vector3(0, 1, 0);
-    const northPoint = pos.clone().add(
-      worldNorth.clone().addScaledVector(normal, -worldNorth.dot(normal)).normalize()
-    );
-    groupRef.current.lookAt(northPoint);
+    const north = worldNorth.clone().addScaledVector(normal, -worldNorth.dot(normal)).normalize();
+    const east  = new THREE.Vector3().crossVectors(normal, north).normalize();
 
-    // Step 2: Rotate around the surface normal by heading
+    // Heading 0=north, 90=east (aviation convention), clockwise
     const headingRad = ((flight.heading ?? 0) * Math.PI) / 180;
-    groupRef.current.rotateOnWorldAxis(normal, -headingRad);
+    const forward = north.clone().multiplyScalar(Math.cos(headingRad))
+                         .addScaledVector(east, Math.sin(headingRad));
+
+    // Orient group: +Y = surface normal (up), -Z = forward direction
+    groupRef.current.up.copy(normal);
+    groupRef.current.lookAt(pos.clone().add(forward));
   });
 
   return (
