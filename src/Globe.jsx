@@ -822,11 +822,14 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
 // Model native axes: nose=+X, up=+Z, left-wing=+Y
 // Surface frame: east=+X, north=+Y, normal=+Z
 // We need: model nose (+X) → north (+Y), model up (+Z) → normal (+Z), model left-wing (+Y) → west (-X)
+// Model axes from GLB bounding box: nose=+Y, wingspan=X, height=+Z (belly up in model space)
+// Surface frame: east=+X, north=+Y, normal=+Z
+// Map: model+X(wing)→east(+X), model+Y(nose)→north(+Y), model+Z(belly-up)→normal(+Z, flipped so belly faces down)
 const MODEL_ORIENTATION_FIX = new THREE.Quaternion().setFromRotationMatrix(
   new THREE.Matrix4().makeBasis(
-    new THREE.Vector3( 0, 1, 0),  // model +X (nose)      → +Y (north)
-    new THREE.Vector3( 0, 0, 1),  // model +Y (left wing) → +Z (normal, belly-down)
-    new THREE.Vector3(-1, 0, 0)   // model +Z (up)        → -X
+    new THREE.Vector3(1,  0,  0),  // model +X (wing)  → +X (east)
+    new THREE.Vector3(0,  1,  0),  // model +Y (nose)  → +Y (north)
+    new THREE.Vector3(0,  0, -1)   // model +Z (belly up) → -Z (belly down, toward globe)
   )
 );
 
