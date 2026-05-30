@@ -111,72 +111,63 @@ function WaypointDots({ positions, color, radius }) {
   );
 }
 
-function FlightRoute({ flight, showFlown, showFiled }) {
-  const { waypoints, color } = flight;
+function FlightRoute({ flight, showTrail, showRoute }) {
+  const { waypoints, trail, color } = flight;
   const routeColor = softenColor(color);
   const camDist = useContext(CamDistContext);
   const waypointDotRadius = 0.003 * (camDist / 5);
-  // Lines are brightest when zoomed out (camDist~5) and fade slightly when zoomed in
   const zoomFactor = Math.min(camDist / 5, 1);
-  const unflownOpacity = 0.25 + zoomFactor * 0.5;  // 0.25 zoomed in → 0.75 zoomed out
-  const flownOpacity = 0.55 + zoomFactor * 0.35;   // 0.55 → 0.9
+  const routeOpacity = 0.25 + zoomFactor * 0.5;
+  const trailOpacity = 0.7 + zoomFactor * 0.25;
 
-  // Stable key for waypoints — only recompute geometry when the route actually changes
   const waypointsKey = useMemo(() =>
     waypoints ? waypoints.map((w) => `${w.lat},${w.lon}`).join('|') : ''
   , [waypoints]);
 
-  const { unflownGeom, flownGeom, waypointPositions } = useMemo(() => {
+  const { routeGeom, waypointPositions } = useMemo(() => {
     const curve = buildRoutePoints(waypoints);
     if (!curve) return {};
-
     const totalPoints = Math.max(waypoints.length * 4, 120);
     const allPositions = curve.getPoints(totalPoints);
-
-    const planeVec = latLngToVec3(flight.lat, flight.lon, RADIUS);
-    let closestIdx = 0;
-    let closestDist = Infinity;
-    allPositions.forEach((p, i) => {
-      const d = p.distanceTo(planeVec);
-      if (d < closestDist) { closestDist = d; closestIdx = i; }
-    });
-
     const toArr = (pts) => new Float32Array(pts.flatMap((p) => [p.x, p.y, p.z]));
-
     const makeLineGeom = (pts) => {
       if (pts.length < 2) return null;
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(toArr(pts), 3));
       return g;
     };
-
-    const unflownGeom = makeLineGeom(allPositions.slice(closestIdx));
-    const flownGeom = closestIdx >= 1 ? makeLineGeom(allPositions.slice(0, closestIdx + 1)) : null;
-
+    const routeGeom = makeLineGeom(allPositions);
     const waypointPositions = waypoints.slice(1, -1).map(({ lat, lon, alt }) =>
       latLngToVec3(lat, lon, RADIUS + altToLift(alt ?? 0))
     );
+    return { routeGeom, waypointPositions };
+  }, [waypointsKey]);
 
-    return { unflownGeom, flownGeom, waypointPositions };
-  }, [waypointsKey, flight.lat, flight.lon]);
+  const trailGeom = useMemo(() => {
+    if (!trail || trail.length < 2) return null;
+    const pts = trail.map(({ lat, lon, alt }) => latLngToVec3(lat, lon, RADIUS + altToLift(alt ?? 0)));
+    const arr = new Float32Array(pts.flatMap((p) => [p.x, p.y, p.z]));
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    return g;
+  }, [trail]);
 
-  if (!unflownGeom && !flownGeom) return null;
-  if (!showFlown && !showFiled) return null;
+  if (!showTrail && !showRoute) return null;
 
   return (
     <group>
-      {showFiled && unflownGeom && (
-        <line geometry={unflownGeom}>
-          <lineBasicMaterial color={routeColor} transparent opacity={unflownOpacity} depthWrite={false} linewidth={3} />
+      {showRoute && routeGeom && (
+        <line geometry={routeGeom}>
+          <lineBasicMaterial color={routeColor} transparent opacity={routeOpacity} depthWrite={false} linewidth={3} />
         </line>
       )}
-      {showFlown && flownGeom && (
-        <line geometry={flownGeom}>
-          <lineBasicMaterial color={routeColor} transparent opacity={flownOpacity} depthWrite={false} linewidth={3} />
-        </line>
-      )}
-      {(showFiled || showFlown) && waypointPositions?.length > 0 && (
+      {showRoute && waypointPositions?.length > 0 && (
         <WaypointDots positions={waypointPositions} color={routeColor} radius={waypointDotRadius} />
+      )}
+      {showTrail && trailGeom && (
+        <line geometry={trailGeom}>
+          <lineBasicMaterial color={routeColor} transparent opacity={trailOpacity} depthWrite={false} linewidth={3} />
+        </line>
       )}
     </group>
   );
@@ -774,7 +765,7 @@ function WeatherOverlay({ tileUrl }) {
   );
 }
 
-function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, cities, controllers, boundaries, rotating, showAtc, showWeather, weatherTileUrl, showFlown, showFiled }) {
+function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, cities, controllers, boundaries, rotating, showAtc, showWeather, weatherTileUrl, showTrail, showRoute }) {
   const meshRef = useRef();
   const { gl } = useThree();
   const maxTexSize = gl.capabilities.maxTextureSize;
@@ -812,7 +803,7 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
       <Suspense fallback={null}>
         {flights.map((flight) => (
           <group key={flight.discordId}>
-            {flight.waypoints?.length >= 2 && <FlightRoute flight={flight} showFlown={showFlown} showFiled={showFiled} />}
+            {(flight.waypoints?.length >= 2 || flight.trail?.length >= 2) && <FlightRoute flight={flight} showTrail={showTrail} showRoute={showRoute} />}
             <FlightMarker flight={flight} onClick={onFlightClick} />
           </group>
         ))}
@@ -926,8 +917,8 @@ export function Globe({ flights, controllers, onFlightClick }) {
   const [rotating, setRotating] = useState(true);
   const [showAtc, setShowAtc] = useState(true);
   const [showWeather, setShowWeather] = useState(false);
-  const [showFlown, setShowFlown] = useState(true);
-  const [showFiled, setShowFiled] = useState(true);
+  const [showTrail, setShowTrail] = useState(true);
+  const [showRoute, setShowRoute] = useState(true);
   const weatherTileUrl = useRainViewerUrl();
 
   useEffect(() => {
@@ -990,7 +981,7 @@ export function Globe({ flights, controllers, onFlightClick }) {
           <ambientLight intensity={3.5} />
           <pointLight position={[10, 10, 10]} intensity={2.5} />
           <Suspense fallback={null}>
-            <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} geojson110m={geojson110m} geojson10m={geojson10m} cities={cities} controllers={controllers} boundaries={boundaries} rotating={rotating} showAtc={showAtc} showWeather={showWeather} weatherTileUrl={weatherTileUrl} showFlown={showFlown} showFiled={showFiled} />
+            <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} geojson110m={geojson110m} geojson10m={geojson10m} cities={cities} controllers={controllers} boundaries={boundaries} rotating={rotating} showAtc={showAtc} showWeather={showWeather} weatherTileUrl={weatherTileUrl} showTrail={showTrail} showRoute={showRoute} />
           </Suspense>
           <CameraTracker onUpdate={setCamDist} />
           <OrbitControls
@@ -1022,8 +1013,8 @@ export function Globe({ flights, controllers, onFlightClick }) {
       }}>
         <ToggleButton label="ATC" active={showAtc} onClick={() => setShowAtc((v) => !v)} />
         <ToggleButton label="Weather" active={showWeather} onClick={() => setShowWeather((v) => !v)} />
-        <ToggleButton label="Flown" active={showFlown} onClick={() => setShowFlown((v) => !v)} />
-        <ToggleButton label="Filed" active={showFiled} onClick={() => setShowFiled((v) => !v)} />
+        <ToggleButton label="Trail" active={showTrail} onClick={() => setShowTrail((v) => !v)} />
+        <ToggleButton label="Route" active={showRoute} onClick={() => setShowRoute((v) => !v)} />
       </div>
     </div>
   );
