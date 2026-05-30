@@ -820,13 +820,13 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
 }
 
 // Model native axes: nose=+X, up=+Z, left-wing=+Y
-// We need: nose→forward (-Z in Three.js lookAt space), up→+Y
-// Rotation: X→-Z, Z→+Y, Y→+X  (right-hand consistent)
+// Target: nose→-Z (forward in lookAt space), up→+Y, right-wing→+X
+// makeBasis(newX, newY, newZ) = where model X,Y,Z go in world space
 const MODEL_ORIENTATION_FIX = (() => {
   const m = new THREE.Matrix4().makeBasis(
-    new THREE.Vector3(0, 0, -1),  // model +X (nose)   → forward (-Z)
-    new THREE.Vector3(0, 1,  0),  // model +Z (up)     → up (+Y)
-    new THREE.Vector3(1, 0,  0)   // model +Y (left wing) → right (+X)
+    new THREE.Vector3(0, 0, -1),  // model +X (nose)      → -Z (forward)
+    new THREE.Vector3(-1, 0,  0), // model +Y (left wing) → -X (left)
+    new THREE.Vector3(0, 1,  0)   // model +Z (up)        → +Y (up)
   );
   return new THREE.Quaternion().setFromRotationMatrix(m);
 })();
