@@ -848,12 +848,20 @@ function FlightMarker({ flight, onClick }) {
     groupRef.current.position.copy(pos);
 
     const normal = pos.clone().normalize();
-    const up = new THREE.Vector3(0, 1, 0);
-    const safeUp = Math.abs(normal.dot(up)) > 0.99 ? new THREE.Vector3(1, 0, 0) : up;
-    const surfaceMatrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0, 0, 0), safeUp);
+    // Geographic north in world space (globe +Y axis)
+    const worldNorth = new THREE.Vector3(0, 1, 0);
+    // Project north onto the surface plane (remove component along normal)
+    const north = worldNorth.clone().addScaledVector(normal, -worldNorth.dot(normal)).normalize();
+    // At poles north is degenerate — fall back to world +Z projected onto surface
+    const safeNorth = north.lengthSq() > 0.001 ? north :
+      new THREE.Vector3(0, 0, 1).addScaledVector(normal, -normal.z).normalize();
+    // east = north × normal (right-hand: points east along surface)
+    const east = new THREE.Vector3().crossVectors(safeNorth, normal).normalize();
+    // Build rotation matrix: east=+X, north=+Y, normal=+Z
+    const surfaceMatrix = new THREE.Matrix4().makeBasis(east, safeNorth, normal);
     const q = new THREE.Quaternion().setFromRotationMatrix(surfaceMatrix);
     const headingRad = ((flight.heading ?? 0) * Math.PI) / 180;
-    const headingQ = new THREE.Quaternion().setFromAxisAngle(normal, -headingRad);
+    const headingQ = new THREE.Quaternion().setFromAxisAngle(normal, headingRad);
     groupRef.current.quaternion.copy(headingQ.multiply(q).multiply(MODEL_ORIENTATION_FIX.clone()));
   });
 
