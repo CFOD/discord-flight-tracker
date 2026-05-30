@@ -111,7 +111,7 @@ function WaypointDots({ positions, color, radius }) {
   );
 }
 
-function FlightRoute({ flight }) {
+function FlightRoute({ flight, showFlown, showFiled }) {
   const { waypoints, color } = flight;
   const routeColor = softenColor(color);
   const camDist = useContext(CamDistContext);
@@ -160,20 +160,22 @@ function FlightRoute({ flight }) {
     return { unflownGeom, flownGeom, waypointPositions };
   }, [waypointsKey, flight.lat, flight.lon]);
 
-  if (!unflownGeom) return null;
+  if (!unflownGeom && !flownGeom) return null;
+  if (!showFlown && !showFiled) return null;
 
   return (
     <group>
-      <line geometry={unflownGeom}>
-        <lineBasicMaterial color={routeColor} transparent opacity={unflownOpacity} depthWrite={false} linewidth={3} />
-      </line>
-      {flownGeom && (
+      {showFiled && unflownGeom && (
+        <line geometry={unflownGeom}>
+          <lineBasicMaterial color={routeColor} transparent opacity={unflownOpacity} depthWrite={false} linewidth={3} />
+        </line>
+      )}
+      {showFlown && flownGeom && (
         <line geometry={flownGeom}>
           <lineBasicMaterial color={routeColor} transparent opacity={flownOpacity} depthWrite={false} linewidth={3} />
         </line>
       )}
-      {/* Waypoint dots — single instanced mesh */}
-      {waypointPositions?.length > 0 && (
+      {(showFiled || showFlown) && waypointPositions?.length > 0 && (
         <WaypointDots positions={waypointPositions} color={routeColor} radius={waypointDotRadius} />
       )}
     </group>
@@ -772,7 +774,7 @@ function WeatherOverlay({ tileUrl }) {
   );
 }
 
-function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, cities, controllers, boundaries, rotating, showAtc, showWeather, weatherTileUrl }) {
+function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, cities, controllers, boundaries, rotating, showAtc, showWeather, weatherTileUrl, showFlown, showFiled }) {
   const meshRef = useRef();
   const { gl } = useThree();
   const maxTexSize = gl.capabilities.maxTextureSize;
@@ -810,7 +812,7 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
       <Suspense fallback={null}>
         {flights.map((flight) => (
           <group key={flight.discordId}>
-            {flight.waypoints?.length >= 2 && <FlightRoute flight={flight} />}
+            {flight.waypoints?.length >= 2 && <FlightRoute flight={flight} showFlown={showFlown} showFiled={showFiled} />}
             <FlightMarker flight={flight} onClick={onFlightClick} />
           </group>
         ))}
@@ -924,6 +926,8 @@ export function Globe({ flights, controllers, onFlightClick }) {
   const [rotating, setRotating] = useState(true);
   const [showAtc, setShowAtc] = useState(true);
   const [showWeather, setShowWeather] = useState(false);
+  const [showFlown, setShowFlown] = useState(true);
+  const [showFiled, setShowFiled] = useState(true);
   const weatherTileUrl = useRainViewerUrl();
 
   useEffect(() => {
@@ -986,7 +990,7 @@ export function Globe({ flights, controllers, onFlightClick }) {
           <ambientLight intensity={3.5} />
           <pointLight position={[10, 10, 10]} intensity={2.5} />
           <Suspense fallback={null}>
-            <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} geojson110m={geojson110m} geojson10m={geojson10m} cities={cities} controllers={controllers} boundaries={boundaries} rotating={rotating} showAtc={showAtc} showWeather={showWeather} weatherTileUrl={weatherTileUrl} />
+            <EarthMesh flights={flights} onFlightClick={onFlightClick} geojson={geojson} geojson110m={geojson110m} geojson10m={geojson10m} cities={cities} controllers={controllers} boundaries={boundaries} rotating={rotating} showAtc={showAtc} showWeather={showWeather} weatherTileUrl={weatherTileUrl} showFlown={showFlown} showFiled={showFiled} />
           </Suspense>
           <CameraTracker onUpdate={setCamDist} />
           <OrbitControls
@@ -1018,6 +1022,8 @@ export function Globe({ flights, controllers, onFlightClick }) {
       }}>
         <ToggleButton label="ATC" active={showAtc} onClick={() => setShowAtc((v) => !v)} />
         <ToggleButton label="Weather" active={showWeather} onClick={() => setShowWeather((v) => !v)} />
+        <ToggleButton label="Flown" active={showFlown} onClick={() => setShowFlown((v) => !v)} />
+        <ToggleButton label="Filed" active={showFiled} onClick={() => setShowFiled((v) => !v)} />
       </div>
     </div>
   );
