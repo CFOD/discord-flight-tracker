@@ -822,10 +822,13 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
 // Model native axes: nose=+X, up=+Z, left-wing=+Y
 // Surface frame: east=+X, north=+Y, normal=+Z
 // We need: model nose (+X) → north (+Y), model up (+Z) → normal (+Z), model left-wing (+Y) → west (-X)
-// Model axes (from GLB bounding box): nose=+Y, wingspan=X, belly-up=+Z
-// Surface frame: east=+X, north=+Y, normal=+Z
-// Nose already aligns with north, up already aligns with normal — identity quaternion
-const MODEL_ORIENTATION_FIX = new THREE.Quaternion(); // identity
+// Model axes (from GLB bounding box): nose=+Y, belly-up=+Z
+// lookAt gives us: group -Z = north, group +Y = surface normal (up)
+// Need: nose(+Y) → north(-Z), belly(+Z) → up(+Y)
+// That's a +90° rotation around the X axis
+const MODEL_ORIENTATION_FIX = new THREE.Quaternion().setFromAxisAngle(
+  new THREE.Vector3(1, 0, 0), Math.PI / 2
+);
 
 function FlightMarker({ flight, onClick }) {
   const [hovered, setHovered] = useState(false);
@@ -844,21 +847,20 @@ function FlightMarker({ flight, onClick }) {
     groupRef.current.position.copy(pos);
 
     const normal = pos.clone().normalize();
-    // Geographic north in world space (globe +Y axis)
+
+    // Step 1: Orient the group so its +Y points away from globe surface (up)
+    // and its -Z points toward north. Use Object3D.up + lookAt for this.
+    groupRef.current.up.copy(normal);
+    // lookAt a point "north" of the plane's position on the surface
     const worldNorth = new THREE.Vector3(0, 1, 0);
-    // Project north onto the surface plane (remove component along normal)
-    const north = worldNorth.clone().addScaledVector(normal, -worldNorth.dot(normal)).normalize();
-    // At poles north is degenerate — fall back to world +Z projected onto surface
-    const safeNorth = north.lengthSq() > 0.001 ? north :
-      new THREE.Vector3(0, 0, 1).addScaledVector(normal, -normal.z).normalize();
-    // east = north × normal (right-hand: points east along surface)
-    const east = new THREE.Vector3().crossVectors(safeNorth, normal).normalize();
-    // Build rotation matrix: east=+X, north=+Y, normal=+Z
-    const surfaceMatrix = new THREE.Matrix4().makeBasis(east, safeNorth, normal);
-    const q = new THREE.Quaternion().setFromRotationMatrix(surfaceMatrix);
+    const northPoint = pos.clone().add(
+      worldNorth.clone().addScaledVector(normal, -worldNorth.dot(normal)).normalize()
+    );
+    groupRef.current.lookAt(northPoint);
+
+    // Step 2: Rotate around the surface normal by heading
     const headingRad = ((flight.heading ?? 0) * Math.PI) / 180;
-    const headingQ = new THREE.Quaternion().setFromAxisAngle(normal, headingRad);
-    groupRef.current.quaternion.copy(headingQ.multiply(q).multiply(MODEL_ORIENTATION_FIX.clone()));
+    groupRef.current.rotateOnWorldAxis(normal, -headingRad);
   });
 
   return (
@@ -869,7 +871,9 @@ function FlightMarker({ flight, onClick }) {
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
     >
-      <primitive object={cloned} />
+      <group quaternion={MODEL_ORIENTATION_FIX}>
+        <primitive object={cloned} />
+      </group>
     </group>
   );
 }
