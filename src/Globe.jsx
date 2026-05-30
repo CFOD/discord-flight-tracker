@@ -819,12 +819,16 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
   );
 }
 
-// Precomputed orientation correction for this model (roll, pitch, z fixes)
+// Model native axes: nose=+X, up=+Z, left-wing=+Y
+// We need: nose→forward (-Z in Three.js lookAt space), up→+Y
+// Rotation: X→-Z, Z→+Y, Y→+X  (right-hand consistent)
 const MODEL_ORIENTATION_FIX = (() => {
-  const rollFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
-  const pitchFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
-  const zFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.PI / 2);
-  return rollFix.multiply(pitchFix).multiply(zFix);
+  const m = new THREE.Matrix4().makeBasis(
+    new THREE.Vector3(0, 0, -1),  // model +X (nose)   → forward (-Z)
+    new THREE.Vector3(0, 1,  0),  // model +Z (up)     → up (+Y)
+    new THREE.Vector3(1, 0,  0)   // model +Y (left wing) → right (+X)
+  );
+  return new THREE.Quaternion().setFromRotationMatrix(m);
 })();
 
 function FlightMarker({ flight, onClick }) {
