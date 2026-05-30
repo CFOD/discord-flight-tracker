@@ -822,12 +822,6 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
 // Model native axes: nose=+X, up=+Z, left-wing=+Y
 // Surface frame: east=+X, north=+Y, normal=+Z
 // We need: model nose (+X) → north (+Y), model up (+Z) → normal (+Z), model left-wing (+Y) → west (-X)
-// Model axes (from GLB bounding box): nose=+Y, belly-up=+Z
-// lookAt gives us: group -Z = north, group +Y = surface normal (up)
-// +90° around X maps: nose(+Y)→north(-Z) ✓  belly(+Z)→up(+Y) ✓
-const MODEL_ORIENTATION_FIX = new THREE.Quaternion().setFromAxisAngle(
-  new THREE.Vector3(1, 0, 0), Math.PI / 2
-);
 
 function FlightMarker({ flight, onClick }) {
   const [hovered, setHovered] = useState(false);
@@ -835,7 +829,7 @@ function FlightMarker({ flight, onClick }) {
   const camDist = useContext(CamDistContext);
   const scale = (camDist / 5) * (hovered ? 0.000055 : 0.000045) * 0.01;
 
-  const { scene } = useGLTF('/models/a380-opt.glb');
+  const { scene } = useGLTF('/models/a380-fixed.glb');
   const cloned = useMemo(() => scene.clone(true), [scene]);
 
   // Imperatively update position + quaternion so the primitive always reflects latest flight data
@@ -870,14 +864,12 @@ function FlightMarker({ flight, onClick }) {
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
     >
-      <group quaternion={MODEL_ORIENTATION_FIX}>
-        <primitive object={cloned} />
-      </group>
+      <primitive object={cloned} />
     </group>
   );
 }
 
-useGLTF.preload('/models/a380-opt.glb');
+useGLTF.preload('/models/a380-fixed.glb');
 
 function CameraTracker({ onUpdate }) {
   const lastRef = useRef(5);
