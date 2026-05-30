@@ -821,7 +821,7 @@ function EarthMesh({ flights, onFlightClick, geojson, geojson110m, geojson10m, c
 
 // Precomputed orientation correction for this model (roll, pitch, z fixes)
 const MODEL_ORIENTATION_FIX = (() => {
-  const rollFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  const rollFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0);
   const pitchFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
   const zFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.PI / 2);
   return rollFix.multiply(pitchFix).multiply(zFix);
